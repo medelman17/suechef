@@ -67,16 +67,34 @@ This is a Model Context Protocol (MCP) server project using FastMCP for legal re
 - OpenAI API key is required for generating embeddings
 
 ### Available Tools
+
+**Event Management:**
 1. **add_event** - Add chronology events
-2. **create_snippet** - Create legal research snippets
-3. **unified_legal_search** - Hybrid search across all systems
-4. **postgres_full_text_search** - PostgreSQL full-text search
-5. **postgres_advanced_query** - Complex JSONB queries
-6. **ingest_legal_document** - Process full documents
-7. **temporal_legal_query** - Temporal knowledge queries
-8. **create_manual_link** - Link events to precedents
-9. **get_legal_analytics** - Comprehensive analytics
-10. **get_system_status** - Health check
+2. **get_event** - Get a single event by ID
+3. **list_events** - List events with filtering
+4. **update_event** - Update existing event
+5. **delete_event** - Delete an event
+
+**Snippet Management:**
+6. **create_snippet** - Create legal research snippets
+7. **get_snippet** - Get a single snippet by ID
+8. **list_snippets** - List snippets with filtering
+9. **update_snippet** - Update existing snippet
+10. **delete_snippet** - Delete a snippet
+
+**Search & Analysis:**
+11. **unified_legal_search** - Hybrid search across all systems
+12. **postgres_full_text_search** - PostgreSQL full-text search
+13. **postgres_advanced_query** - Complex JSONB queries
+14. **temporal_legal_query** - Temporal knowledge queries
+
+**Document & Relationship Management:**
+15. **ingest_legal_document** - Process full documents
+16. **create_manual_link** - Link events to precedents
+
+**System:**
+17. **get_legal_analytics** - Comprehensive analytics
+18. **get_system_status** - Health check
 
 ## Dependency Management Guidelines
 - Use `uv` to manage python dependencies, builds, etc. 

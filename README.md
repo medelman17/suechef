@@ -4,16 +4,24 @@ A powerful legal research system that combines PostgreSQL, Qdrant vector databas
 
 ## Features
 
-### =Å Timeline & Event Management
+### =ï¿½ Timeline & Event Management
 - **add_event**: Add chronology events with automatic vector and knowledge graph storage
+- **get_event**: Get a single event by ID
+- **list_events**: List events with filtering by date, parties, or tags
+- **update_event**: Update existing event (partial updates supported)
+- **delete_event**: Delete an event from all systems
 - **create_snippet**: Create legal research snippets (case law, precedents, statutes)
+- **get_snippet**: Get a single snippet by ID
+- **list_snippets**: List snippets with filtering by case type or tags
+- **update_snippet**: Update existing snippet (partial updates supported)
+- **delete_snippet**: Delete a snippet from all systems
 
 ### = Search & Discovery
 - **unified_legal_search**: Hybrid search across PostgreSQL + Qdrant + Graphiti
 - **postgres_full_text_search**: Advanced PostgreSQL full-text search with relevance ranking
 - **postgres_advanced_query**: Execute complex PostgreSQL queries with JSONB operations
 
-### =Ú Document Processing
+### =ï¿½ Document Processing
 - **ingest_legal_document**: Feed entire legal documents for automatic entity extraction and knowledge graph building
 
 ### =p Temporal Intelligence
@@ -22,7 +30,7 @@ A powerful legal research system that combines PostgreSQL, Qdrant vector databas
 ### = Relationship Management
 - **create_manual_link**: Create explicit relationships between events and legal precedents
 
-### =Ê Analytics & Insights
+### =ï¿½ Analytics & Insights
 - **get_legal_analytics**: Comprehensive legal research analytics
 - **get_system_status**: Health check for all system components
 

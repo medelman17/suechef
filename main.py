@@ -174,6 +174,115 @@ async def list_tools() -> list[Tool]:
                 "type": "object",
                 "properties": {}
             }
+        ),
+        # READ operations
+        Tool(
+            name="get_event",
+            description="Get a single event by ID",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "event_id": {"type": "string", "description": "Event ID (UUID)"}
+                },
+                "required": ["event_id"]
+            }
+        ),
+        Tool(
+            name="get_snippet",
+            description="Get a single snippet by ID",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "snippet_id": {"type": "string", "description": "Snippet ID (UUID)"}
+                },
+                "required": ["snippet_id"]
+            }
+        ),
+        Tool(
+            name="list_events",
+            description="List events with optional filtering by date, parties, or tags",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "description": "Maximum number of results", "default": 50},
+                    "offset": {"type": "integer", "description": "Offset for pagination", "default": 0},
+                    "date_from": {"type": "string", "description": "Start date (YYYY-MM-DD)"},
+                    "date_to": {"type": "string", "description": "End date (YYYY-MM-DD)"},
+                    "parties_filter": {"type": "array", "items": {"type": "string"}, "description": "Filter by parties"},
+                    "tags_filter": {"type": "array", "items": {"type": "string"}, "description": "Filter by tags"}
+                }
+            }
+        ),
+        Tool(
+            name="list_snippets",
+            description="List snippets with optional filtering by case type or tags",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "description": "Maximum number of results", "default": 50},
+                    "offset": {"type": "integer", "description": "Offset for pagination", "default": 0},
+                    "case_type": {"type": "string", "description": "Filter by case type"},
+                    "tags_filter": {"type": "array", "items": {"type": "string"}, "description": "Filter by tags"}
+                }
+            }
+        ),
+        # UPDATE operations
+        Tool(
+            name="update_event",
+            description="Update an existing event (only specified fields will be updated)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "event_id": {"type": "string", "description": "Event ID to update"},
+                    "date": {"type": "string", "description": "Event date (YYYY-MM-DD)"},
+                    "description": {"type": "string", "description": "Event description"},
+                    "parties": {"type": "array", "items": {"type": "string"}, "description": "Parties involved"},
+                    "document_source": {"type": "string", "description": "Source document"},
+                    "excerpts": {"type": "string", "description": "Relevant excerpts"},
+                    "tags": {"type": "array", "items": {"type": "string"}, "description": "Tags"},
+                    "significance": {"type": "string", "description": "Legal significance"}
+                },
+                "required": ["event_id"]
+            }
+        ),
+        Tool(
+            name="update_snippet",
+            description="Update an existing snippet (only specified fields will be updated)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "snippet_id": {"type": "string", "description": "Snippet ID to update"},
+                    "citation": {"type": "string", "description": "Legal citation"},
+                    "key_language": {"type": "string", "description": "Key legal language"},
+                    "tags": {"type": "array", "items": {"type": "string"}, "description": "Tags"},
+                    "context": {"type": "string", "description": "Context"},
+                    "case_type": {"type": "string", "description": "Type of case"}
+                },
+                "required": ["snippet_id"]
+            }
+        ),
+        # DELETE operations
+        Tool(
+            name="delete_event",
+            description="Delete an event from all systems",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "event_id": {"type": "string", "description": "Event ID to delete"}
+                },
+                "required": ["event_id"]
+            }
+        ),
+        Tool(
+            name="delete_snippet",
+            description="Delete a snippet from all systems",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "snippet_id": {"type": "string", "description": "Snippet ID to delete"}
+                },
+                "required": ["snippet_id"]
+            }
         )
     ]
 
@@ -231,6 +340,35 @@ async def call_tool(name: str, arguments: dict) -> str:
         elif name == "get_system_status":
             result = await legal_tools.get_system_status(
                 postgres_pool, qdrant_client, neo4j_driver
+            )
+        # READ operations
+        elif name == "get_event":
+            result = await legal_tools.get_event(postgres_pool, **arguments)
+        elif name == "get_snippet":
+            result = await legal_tools.get_snippet(postgres_pool, **arguments)
+        elif name == "list_events":
+            result = await legal_tools.list_events(postgres_pool, **arguments)
+        elif name == "list_snippets":
+            result = await legal_tools.list_snippets(postgres_pool, **arguments)
+        # UPDATE operations
+        elif name == "update_event":
+            result = await legal_tools.update_event(
+                postgres_pool, qdrant_client, graphiti_client, openai_client,
+                **arguments
+            )
+        elif name == "update_snippet":
+            result = await legal_tools.update_snippet(
+                postgres_pool, qdrant_client, graphiti_client, openai_client,
+                **arguments
+            )
+        # DELETE operations
+        elif name == "delete_event":
+            result = await legal_tools.delete_event(
+                postgres_pool, qdrant_client, **arguments
+            )
+        elif name == "delete_snippet":
+            result = await legal_tools.delete_snippet(
+                postgres_pool, qdrant_client, **arguments
             )
         else:
             return json.dumps({"error": f"Unknown tool: {name}"})

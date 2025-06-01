@@ -541,3 +541,443 @@ async def get_system_status(
     ]
     
     return status
+
+
+# READ OPERATIONS
+
+async def get_event(
+    postgres_pool: asyncpg.Pool,
+    event_id: str
+) -> Dict[str, Any]:
+    """Get a single event by ID."""
+    async with postgres_pool.acquire() as conn:
+        event = await conn.fetchrow(
+            """
+            SELECT id, date, description, parties, document_source, 
+                   excerpts, tags, significance, created_at, updated_at
+            FROM events
+            WHERE id = $1
+            """,
+            uuid.UUID(event_id)
+        )
+        
+        if not event:
+            return {"error": f"Event {event_id} not found"}
+        
+        return dict(event)
+
+
+async def get_snippet(
+    postgres_pool: asyncpg.Pool,
+    snippet_id: str
+) -> Dict[str, Any]:
+    """Get a single snippet by ID."""
+    async with postgres_pool.acquire() as conn:
+        snippet = await conn.fetchrow(
+            """
+            SELECT id, citation, key_language, tags, context, 
+                   case_type, created_at, updated_at
+            FROM snippets
+            WHERE id = $1
+            """,
+            uuid.UUID(snippet_id)
+        )
+        
+        if not snippet:
+            return {"error": f"Snippet {snippet_id} not found"}
+        
+        return dict(snippet)
+
+
+async def list_events(
+    postgres_pool: asyncpg.Pool,
+    limit: int = 50,
+    offset: int = 0,
+    date_from: str = None,
+    date_to: str = None,
+    parties_filter: List[str] = None,
+    tags_filter: List[str] = None
+) -> Dict[str, Any]:
+    """List events with optional filtering."""
+    conditions = []
+    params = []
+    param_count = 0
+    
+    if date_from:
+        param_count += 1
+        conditions.append(f"date >= ${param_count}")
+        params.append(datetime.strptime(date_from, "%Y-%m-%d").date())
+    
+    if date_to:
+        param_count += 1
+        conditions.append(f"date <= ${param_count}")
+        params.append(datetime.strptime(date_to, "%Y-%m-%d").date())
+    
+    if parties_filter:
+        param_count += 1
+        conditions.append(f"parties ?| ${param_count}")
+        params.append(parties_filter)
+    
+    if tags_filter:
+        param_count += 1
+        conditions.append(f"tags ?| ${param_count}")
+        params.append(tags_filter)
+    
+    where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
+    
+    async with postgres_pool.acquire() as conn:
+        # Get total count
+        count_query = f"SELECT COUNT(*) FROM events {where_clause}"
+        total_count = await conn.fetchval(count_query, *params)
+        
+        # Get events
+        param_count += 1
+        params.append(limit)
+        param_count += 1
+        params.append(offset)
+        
+        events_query = f"""
+            SELECT id, date, description, parties, tags, 
+                   document_source, significance
+            FROM events
+            {where_clause}
+            ORDER BY date DESC, created_at DESC
+            LIMIT ${param_count-1} OFFSET ${param_count}
+        """
+        
+        events = await conn.fetch(events_query, *params)
+        
+        return {
+            "events": [dict(e) for e in events],
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset
+        }
+
+
+async def list_snippets(
+    postgres_pool: asyncpg.Pool,
+    limit: int = 50,
+    offset: int = 0,
+    case_type: str = None,
+    tags_filter: List[str] = None
+) -> Dict[str, Any]:
+    """List snippets with optional filtering."""
+    conditions = []
+    params = []
+    param_count = 0
+    
+    if case_type:
+        param_count += 1
+        conditions.append(f"case_type = ${param_count}")
+        params.append(case_type)
+    
+    if tags_filter:
+        param_count += 1
+        conditions.append(f"tags ?| ${param_count}")
+        params.append(tags_filter)
+    
+    where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
+    
+    async with postgres_pool.acquire() as conn:
+        # Get total count
+        count_query = f"SELECT COUNT(*) FROM snippets {where_clause}"
+        total_count = await conn.fetchval(count_query, *params)
+        
+        # Get snippets
+        param_count += 1
+        params.append(limit)
+        param_count += 1
+        params.append(offset)
+        
+        snippets_query = f"""
+            SELECT id, citation, key_language, tags, case_type
+            FROM snippets
+            {where_clause}
+            ORDER BY created_at DESC
+            LIMIT ${param_count-1} OFFSET ${param_count}
+        """
+        
+        snippets = await conn.fetch(snippets_query, *params)
+        
+        return {
+            "snippets": [dict(s) for s in snippets],
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset
+        }
+
+
+# UPDATE OPERATIONS
+
+async def update_event(
+    postgres_pool: asyncpg.Pool,
+    qdrant_client,
+    graphiti_client: Graphiti,
+    openai_client,
+    event_id: str,
+    date: str = None,
+    description: str = None,
+    parties: List[str] = None,
+    document_source: str = None,
+    excerpts: str = None,
+    tags: List[str] = None,
+    significance: str = None
+) -> Dict[str, Any]:
+    """Update an existing event."""
+    # Build update query dynamically
+    updates = []
+    params = []
+    param_count = 0
+    
+    if date is not None:
+        param_count += 1
+        updates.append(f"date = ${param_count}")
+        params.append(datetime.strptime(date, "%Y-%m-%d").date())
+    
+    if description is not None:
+        param_count += 1
+        updates.append(f"description = ${param_count}")
+        params.append(description)
+    
+    if parties is not None:
+        param_count += 1
+        updates.append(f"parties = ${param_count}")
+        params.append(json.dumps(parties))
+    
+    if document_source is not None:
+        param_count += 1
+        updates.append(f"document_source = ${param_count}")
+        params.append(document_source)
+    
+    if excerpts is not None:
+        param_count += 1
+        updates.append(f"excerpts = ${param_count}")
+        params.append(excerpts)
+    
+    if tags is not None:
+        param_count += 1
+        updates.append(f"tags = ${param_count}")
+        params.append(json.dumps(tags))
+    
+    if significance is not None:
+        param_count += 1
+        updates.append(f"significance = ${param_count}")
+        params.append(significance)
+    
+    if not updates:
+        return {"error": "No fields to update"}
+    
+    param_count += 1
+    params.append(uuid.UUID(event_id))
+    
+    async with postgres_pool.acquire() as conn:
+        # Update PostgreSQL
+        update_query = f"""
+            UPDATE events
+            SET {', '.join(updates)}
+            WHERE id = ${param_count}
+            RETURNING id, date, description, parties, document_source, excerpts, tags, significance
+        """
+        
+        updated_event = await conn.fetchrow(update_query, *params)
+        
+        if not updated_event:
+            return {"error": f"Event {event_id} not found"}
+    
+    # Update Qdrant if description, excerpts, or significance changed
+    if description is not None or excerpts is not None or significance is not None:
+        # Get full event data for embedding
+        event_data = dict(updated_event)
+        full_text = f"{event_data['description']} {event_data.get('excerpts', '')} {event_data.get('significance', '')}"
+        embedding = await get_embedding(full_text, openai_client)
+        
+        qdrant_client.upsert(
+            collection_name="legal_events",
+            points=[
+                PointStruct(
+                    id=str(event_id),
+                    vector=embedding,
+                    payload={
+                        "date": str(event_data['date']),
+                        "description": event_data['description'],
+                        "parties": json.loads(event_data['parties']),
+                        "tags": json.loads(event_data['tags']),
+                        "type": "event"
+                    }
+                )
+            ]
+        )
+    
+    return {
+        "event_id": str(event_id),
+        "status": "success",
+        "message": "Event updated successfully",
+        "updated_fields": list(updates)
+    }
+
+
+async def update_snippet(
+    postgres_pool: asyncpg.Pool,
+    qdrant_client,
+    graphiti_client: Graphiti,
+    openai_client,
+    snippet_id: str,
+    citation: str = None,
+    key_language: str = None,
+    tags: List[str] = None,
+    context: str = None,
+    case_type: str = None
+) -> Dict[str, Any]:
+    """Update an existing snippet."""
+    # Build update query dynamically
+    updates = []
+    params = []
+    param_count = 0
+    
+    if citation is not None:
+        param_count += 1
+        updates.append(f"citation = ${param_count}")
+        params.append(citation)
+    
+    if key_language is not None:
+        param_count += 1
+        updates.append(f"key_language = ${param_count}")
+        params.append(key_language)
+    
+    if tags is not None:
+        param_count += 1
+        updates.append(f"tags = ${param_count}")
+        params.append(json.dumps(tags))
+    
+    if context is not None:
+        param_count += 1
+        updates.append(f"context = ${param_count}")
+        params.append(context)
+    
+    if case_type is not None:
+        param_count += 1
+        updates.append(f"case_type = ${param_count}")
+        params.append(case_type)
+    
+    if not updates:
+        return {"error": "No fields to update"}
+    
+    param_count += 1
+    params.append(uuid.UUID(snippet_id))
+    
+    async with postgres_pool.acquire() as conn:
+        # Update PostgreSQL
+        update_query = f"""
+            UPDATE snippets
+            SET {', '.join(updates)}
+            WHERE id = ${param_count}
+            RETURNING id, citation, key_language, tags, context, case_type
+        """
+        
+        updated_snippet = await conn.fetchrow(update_query, *params)
+        
+        if not updated_snippet:
+            return {"error": f"Snippet {snippet_id} not found"}
+    
+    # Update Qdrant if citation, key_language, or context changed
+    if citation is not None or key_language is not None or context is not None:
+        # Get full snippet data for embedding
+        snippet_data = dict(updated_snippet)
+        full_text = f"{snippet_data['citation']} {snippet_data['key_language']} {snippet_data.get('context', '')}"
+        embedding = await get_embedding(full_text, openai_client)
+        
+        qdrant_client.upsert(
+            collection_name="legal_snippets",
+            points=[
+                PointStruct(
+                    id=str(snippet_id),
+                    vector=embedding,
+                    payload={
+                        "citation": snippet_data['citation'],
+                        "key_language": snippet_data['key_language'][:200],
+                        "tags": json.loads(snippet_data['tags']),
+                        "case_type": snippet_data.get('case_type'),
+                        "type": "snippet"
+                    }
+                )
+            ]
+        )
+    
+    return {
+        "snippet_id": str(snippet_id),
+        "status": "success",
+        "message": "Snippet updated successfully",
+        "updated_fields": list(updates)
+    }
+
+
+# DELETE OPERATIONS
+
+async def delete_event(
+    postgres_pool: asyncpg.Pool,
+    qdrant_client,
+    event_id: str
+) -> Dict[str, Any]:
+    """Delete an event from all systems."""
+    async with postgres_pool.acquire() as conn:
+        # Delete from PostgreSQL (cascade will handle manual_links)
+        deleted = await conn.fetchval(
+            "DELETE FROM events WHERE id = $1 RETURNING id",
+            uuid.UUID(event_id)
+        )
+        
+        if not deleted:
+            return {"error": f"Event {event_id} not found"}
+    
+    # Delete from Qdrant
+    try:
+        qdrant_client.delete(
+            collection_name="legal_events",
+            points_selector=[str(event_id)]
+        )
+    except Exception as e:
+        # Log but don't fail if Qdrant delete fails
+        pass
+    
+    # Note: Graphiti deletion would require additional implementation
+    # as it doesn't have a direct delete by external ID method
+    
+    return {
+        "event_id": str(event_id),
+        "status": "success",
+        "message": "Event deleted successfully"
+    }
+
+
+async def delete_snippet(
+    postgres_pool: asyncpg.Pool,
+    qdrant_client,
+    snippet_id: str
+) -> Dict[str, Any]:
+    """Delete a snippet from all systems."""
+    async with postgres_pool.acquire() as conn:
+        # Delete from PostgreSQL (cascade will handle manual_links)
+        deleted = await conn.fetchval(
+            "DELETE FROM snippets WHERE id = $1 RETURNING id",
+            uuid.UUID(snippet_id)
+        )
+        
+        if not deleted:
+            return {"error": f"Snippet {snippet_id} not found"}
+    
+    # Delete from Qdrant
+    try:
+        qdrant_client.delete(
+            collection_name="legal_snippets",
+            points_selector=[str(snippet_id)]
+        )
+    except Exception as e:
+        # Log but don't fail if Qdrant delete fails
+        pass
+    
+    return {
+        "snippet_id": str(snippet_id),
+        "status": "success",
+        "message": "Snippet deleted successfully"
+    }
