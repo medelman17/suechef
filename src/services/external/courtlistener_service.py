@@ -321,18 +321,15 @@ class CourtListenerService:
                     tags.append("negligence")
                 tags.append("courtlistener-import")
                 
-                # Add to snippet system
+                # Add to snippet system using modular service
                 snippet_result = await snippet_service.create_snippet(
-                    postgres_pool=postgres_pool,
-                    qdrant_client=qdrant_client,
-                    graphiti_client=graphiti_client,
-                    openai_client=openai_client,
                     citation=f"{case_name}, {citation_string}",
                     key_language=key_excerpt,
                     tags=tags,
                     context=f"CourtListener ID: {opinion_id}",
                     case_type=opinion.get("type", "civil"),
-                    group_id=group_id
+                    group_id=group_id,
+                    openai_api_key=openai_client.api_key if openai_client else ""
                 )
                 result["snippet_id"] = snippet_result.get("snippet_id")
             
@@ -381,6 +378,16 @@ class CourtListenerService:
                         group_id TEXT DEFAULT 'default'
                     )
                 ''')
+                
+                # Add group_id column if it doesn't exist (for existing tables)
+                try:
+                    await conn.execute('''
+                        ALTER TABLE courtlistener_cache 
+                        ADD COLUMN IF NOT EXISTS group_id TEXT DEFAULT 'default'
+                    ''')
+                except Exception:
+                    # Column might already exist, continue
+                    pass
                 
                 await conn.execute(
                     '''
