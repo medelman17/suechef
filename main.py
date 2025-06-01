@@ -387,11 +387,11 @@ async def unified_legal_search(
 ) -> Dict[str, Any]:
     """Ultimate hybrid search across PostgreSQL + Qdrant + Graphiti (LEGACY VERSION)."""
     await ensure_initialized()
-    # Note: Legacy unified_legal_search doesn't support group_id parameter
+    # Pass group_id to legacy function (now supported)
     return await legal_tools.unified_legal_search(
         db_manager.postgres, db_manager.qdrant, db_manager.graphiti,
         openai.AsyncOpenAI(api_key=config.api.openai_api_key),
-        query, search_type
+        query, search_type, group_id or "default"
     )
 
 

@@ -188,7 +188,8 @@ async def unified_legal_search(
     graphiti_client: Graphiti,
     openai_client,
     query: str,
-    search_type: str = "all"
+    search_type: str = "all",
+    group_id: str = "default"
 ) -> Dict[str, Any]:
     """Perform hybrid search across all systems."""
     results = {}
