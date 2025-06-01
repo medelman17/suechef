@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/fortai-legal/suechef/main/media/logo.png" alt="SueChef Logo" width="400">
+  <img src="media/suecheflogo.png" alt="SueChef Logo" width="400">
 </p>
 
 <h1 align="center">SueChef - Legal Research MCP</h1>
