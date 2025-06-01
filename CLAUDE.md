@@ -36,6 +36,23 @@ uv run python main.py
 
 **Note**: `main.py` now uses the **modular architecture** by default, providing improved performance, maintainability, and type safety. The legacy monolithic version is preserved as `main_legacy.py` for reference.
 
+### Test with Claude Desktop
+```bash
+# Copy pre-configured MCP setup
+cp .mcp.json ~/.config/claude-desktop/mcp.json
+
+# Set your API keys
+export OPENAI_API_KEY="your-openai-api-key"
+export COURTLISTENER_API_KEY="your-courtlistener-api-key"
+
+# Start databases
+docker compose up postgres qdrant neo4j -d
+
+# Restart Claude Desktop to load SueChef tools
+```
+
+See `docs/CLAUDE_DESKTOP_SETUP.md` for comprehensive integration guide.
+
 ### Run setup (initialize databases)
 ```bash
 uv run python setup.py

@@ -28,30 +28,51 @@ Once configured, Claude Desktop will have direct access to:
 git clone https://github.com/medelman17/suechef.git
 cd suechef
 
-# Set up environment
-cp .env.example .env
-# Edit .env and add your OPENAI_API_KEY
+# Set up environment variables
+export OPENAI_API_KEY="your-openai-api-key"
+export COURTLISTENER_API_KEY="your-courtlistener-api-key"  # optional
 
-# Start all services
-docker-compose up -d
+# Start all services (now uses modular architecture by default)
+docker compose up -d
 
 # Verify SueChef is running
 curl http://localhost:8000/mcp
 # Should return MCP session information
 ```
 
-### 2. Configure Claude Desktop
+### 2. Configure Claude Desktop (Two Options)
 
+#### Option A: Pre-configured Setup (Easiest)
+```bash
+# Copy the included MCP configuration
+cp /path/to/suechef/.mcp.json ~/.config/claude-desktop/mcp.json
+
+# Set your API keys
+export OPENAI_API_KEY="your-openai-api-key"
+export COURTLISTENER_API_KEY="your-courtlistener-api-key"
+```
+
+#### Option B: Manual Configuration
 **On macOS**: Edit `~/Library/Application Support/Claude/claude_desktop_config.json`
 **On Windows**: Edit `%APPDATA%/Claude/claude_desktop_config.json`
+**On Linux**: Edit `~/.config/claude-desktop/mcp.json`
 
 ```json
 {
   "mcpServers": {
     "suechef": {
-      "command": "npx",
-      "args": ["-y", "@anthropic-ai/mcp-client", "http://localhost:8000/mcp"],
-      "env": {}
+      "command": "uv",
+      "args": ["run", "python", "main.py"],
+      "cwd": "/path/to/suechef",
+      "env": {
+        "POSTGRES_URL": "postgresql://postgres:suechef_password@localhost:5432/legal_research",
+        "QDRANT_URL": "http://localhost:6333",
+        "NEO4J_URI": "bolt://localhost:7687",
+        "NEO4J_USER": "neo4j",
+        "NEO4J_PASSWORD": "suechef_neo4j_password",
+        "OPENAI_API_KEY": "your-openai-api-key",
+        "COURTLISTENER_API_KEY": "your-courtlistener-api-key"
+      }
     }
   }
 }
@@ -71,39 +92,31 @@ If you're developing or want to run SueChef locally without Docker:
 # Install dependencies
 uv sync
 
+# Start only the databases with Docker
+docker compose up postgres qdrant neo4j -d
+
 # Set environment variables
 export OPENAI_API_KEY="your-openai-key"
-export POSTGRES_URL="postgresql://postgres:password@localhost:5432/legal_research"
+export POSTGRES_URL="postgresql://postgres:suechef_password@localhost:5432/legal_research"
 export QDRANT_URL="http://localhost:6333"
 export NEO4J_URI="bolt://localhost:7687"
+export NEO4J_USER="neo4j"
+export NEO4J_PASSWORD="suechef_neo4j_password"
 
-# Start SueChef
+# Start SueChef (modular architecture)
 uv run python main.py
 ```
 
-Then use the same Claude Desktop configuration as above.
+### Option B: Legacy Architecture (Reference Only)
 
-### Option B: Modular Architecture (Demo)
-
-To try the new modular architecture:
+If you need to test the legacy implementation:
 
 ```bash
-# Start modular version (runs on port 8001)
-docker-compose --profile modular up -d suechef-modular
+# Start with legacy version
+uv run python main_legacy.py
 ```
 
-Claude Desktop configuration:
-```json
-{
-  "mcpServers": {
-    "suechef-modular": {
-      "command": "npx",
-      "args": ["-y", "@anthropic-ai/mcp-client", "http://localhost:8001/mcp"],
-      "env": {}
-    }
-  }
-}
-```
+Note: The legacy version is preserved for reference but the modular architecture is recommended for all new deployments.
 
 ### Option C: Custom Port Configuration
 
