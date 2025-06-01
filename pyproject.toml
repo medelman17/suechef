@@ -14,5 +14,6 @@ dependencies = [
     "neo4j>=5.28.1",
     "psycopg2-binary>=2.9.10",
     "qdrant-client>=1.14.2",
+    "sentry-sdk>=2.29.1",
     "sqlalchemy>=2.0.41",
 ]
