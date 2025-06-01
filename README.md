@@ -125,6 +125,22 @@ docker-compose down -v
 **→ See [CLAUDE_DESKTOP_SETUP.md](CLAUDE_DESKTOP_SETUP.md) for complete integration guide**  
 **→ See [example-workflows.md](example-workflows.md) for real-world usage examples**
 
+## 🔧 Troubleshooting
+
+### Database Migration Issues
+If you encounter trigger duplication errors after upgrading:
+
+**Error**: `trigger "update_events_updated_at" for relation "events" already exists`
+
+**Quick Fix**:
+```bash
+# Update to latest version and restart
+git pull origin main
+docker compose restart suechef
+```
+
+**→ See [DATABASE_MIGRATION_FIX.md](DATABASE_MIGRATION_FIX.md) for detailed resolution steps**
+
 ## Installation
 
 ### Option 1: Docker (Recommended)

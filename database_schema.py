@@ -82,9 +82,12 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
+-- Drop triggers if they exist, then recreate (idempotent)
+DROP TRIGGER IF EXISTS update_events_updated_at ON events;
 CREATE TRIGGER update_events_updated_at BEFORE UPDATE
     ON events FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_snippets_updated_at ON snippets;
 CREATE TRIGGER update_snippets_updated_at BEFORE UPDATE
     ON snippets FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
