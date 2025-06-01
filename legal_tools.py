@@ -12,7 +12,11 @@ import openai
 from graphiti_core import Graphiti
 from graphiti_core.nodes import EntityNode, EpisodeNode
 from graphiti_core.edges import EntityRelation, EpisodicEdge
+from graphiti_core.search import SearchConfig
 import numpy as np
+
+# Import custom legal entity types
+from legal_entity_types import LEGAL_ENTITY_TYPES, LITIGATION_ENTITIES, RESEARCH_ENTITIES
 
 
 async def get_embedding(text: str, openai_client) -> List[float]:
@@ -35,7 +39,8 @@ async def add_event(
     document_source: str = None,
     excerpts: str = None,
     tags: List[str] = None,
-    significance: str = None
+    significance: str = None,
+    group_id: str = "default"
 ) -> Dict[str, Any]:
     """Add a chronology event with automatic vector and knowledge graph storage."""
     
@@ -43,8 +48,8 @@ async def add_event(
     async with postgres_pool.acquire() as conn:
         event_id = await conn.fetchval(
             """
-            INSERT INTO events (date, description, parties, document_source, excerpts, tags, significance)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO events (date, description, parties, document_source, excerpts, tags, significance, group_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING id
             """,
             datetime.strptime(date, "%Y-%m-%d").date(),
@@ -53,7 +58,8 @@ async def add_event(
             document_source,
             excerpts,
             json.dumps(tags or []),
-            significance
+            significance,
+            group_id
         )
     
     # Create embedding and store in Qdrant
@@ -71,7 +77,8 @@ async def add_event(
                     "description": description,
                     "parties": parties or [],
                     "tags": tags or [],
-                    "type": "event"
+                    "type": "event",
+                    "group_id": group_id
                 }
             )
         ]
@@ -86,7 +93,9 @@ async def add_event(
         content=episode_content,
         source=document_source or "Legal Timeline",
         id=str(event_id),
-        timestamp=datetime.strptime(date, "%Y-%m-%d")
+        timestamp=datetime.strptime(date, "%Y-%m-%d"),
+        entity_types=LITIGATION_ENTITIES,
+        group_id=group_id
     )
     
     return {
@@ -105,7 +114,8 @@ async def create_snippet(
     key_language: str,
     tags: List[str] = None,
     context: str = None,
-    case_type: str = None
+    case_type: str = None,
+    group_id: str = "default"
 ) -> Dict[str, Any]:
     """Create a legal research snippet with automatic entity extraction."""
     
@@ -113,15 +123,16 @@ async def create_snippet(
     async with postgres_pool.acquire() as conn:
         snippet_id = await conn.fetchval(
             """
-            INSERT INTO snippets (citation, key_language, tags, context, case_type)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO snippets (citation, key_language, tags, context, case_type, group_id)
+            VALUES ($1, $2, $3, $4, $5, $6)
             RETURNING id
             """,
             citation,
             key_language,
             json.dumps(tags or []),
             context,
-            case_type
+            case_type,
+            group_id
         )
     
     # Create embedding and store in Qdrant
@@ -139,7 +150,8 @@ async def create_snippet(
                     "key_language": key_language[:200],  # Truncate for payload
                     "tags": tags or [],
                     "case_type": case_type,
-                    "type": "snippet"
+                    "type": "snippet",
+                    "group_id": group_id
                 }
             )
         ]
@@ -154,7 +166,9 @@ async def create_snippet(
         content=content,
         source=citation,
         id=str(snippet_id),
-        timestamp=datetime.now()
+        timestamp=datetime.now(),
+        entity_types=RESEARCH_ENTITIES,
+        group_id=group_id
     )
     
     return {
@@ -220,6 +234,7 @@ async def unified_legal_search(
         snippet_results = qdrant_client.search(
             collection_name="legal_snippets",
             query_vector=query_embedding,
+            query_filter=search_filter,
             limit=10
         )
         
@@ -230,7 +245,11 @@ async def unified_legal_search(
     
     # Knowledge graph search
     if search_type in ["knowledge_graph", "all"]:
-        kg_results = await graphiti_client.search(query, num_results=20)
+        kg_results = await graphiti_client.search(
+            query, 
+            num_results=20,
+            group_ids=[group_id] if group_id else None
+        )
         results["knowledge_graph"] = [
             {
                 "content": r.content,
@@ -981,3 +1000,169 @@ async def delete_snippet(
         "status": "success",
         "message": "Snippet deleted successfully"
     }
+
+
+async def build_legal_communities(
+    graphiti_client: Graphiti,
+    group_id: Optional[str] = None
+) -> Dict[str, Any]:
+    """Build communities in the knowledge graph to identify related legal concepts."""
+    try:
+        # Build communities with optional group filtering
+        community_results = await graphiti_client.build_communities(
+            group_ids=[group_id] if group_id else None
+        )
+        
+        return {
+            "status": "success",
+            "message": "Legal communities built successfully",
+            "communities_created": len(community_results) if community_results else 0,
+            "group_id": group_id
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to build communities: {str(e)}"
+        }
+
+
+async def search_legal_communities(
+    graphiti_client: Graphiti,
+    query: str,
+    group_id: Optional[str] = None,
+    limit: int = 10
+) -> Dict[str, Any]:
+    """Search for communities related to a legal query."""
+    try:
+        # Use SearchConfig for community-focused search
+        search_config = SearchConfig(
+            limit=limit,
+            communities_config={
+                "limit": limit,
+                "group_ids": [group_id] if group_id else None
+            }
+        )
+        
+        results = await graphiti_client._search(
+            query=query,
+            config=search_config
+        )
+        
+        communities = []
+        if results.communities:
+            for community in results.communities:
+                communities.append({
+                    "id": community.id,
+                    "summary": getattr(community, 'summary', ''),
+                    "size": getattr(community, 'size', 0),
+                    "relevance_score": getattr(community, 'score', 0.0)
+                })
+        
+        return {
+            "status": "success",
+            "query": query,
+            "group_id": group_id,
+            "communities": communities,
+            "total_found": len(communities)
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Community search failed: {str(e)}"
+        }
+
+
+async def enhanced_legal_search(
+    postgres_pool: asyncpg.Pool,
+    qdrant_client,
+    graphiti_client: Graphiti,
+    openai_client,
+    query: str,
+    search_focus: str = "hybrid",  # hybrid, nodes, edges, communities
+    group_id: Optional[str] = None,
+    limit: int = 20
+) -> Dict[str, Any]:
+    """Enhanced search using SearchConfig for configurable retrieval."""
+    try:
+        results = {"query": query, "group_id": group_id, "search_focus": search_focus}
+        
+        # Graphiti enhanced search with SearchConfig
+        if search_focus in ["hybrid", "nodes", "edges", "communities"]:
+            # Configure search based on focus
+            search_config = SearchConfig(
+                limit=limit,
+                nodes_config={
+                    "limit": limit if search_focus in ["hybrid", "nodes"] else 5,
+                    "group_ids": [group_id] if group_id else None
+                },
+                edges_config={
+                    "limit": limit if search_focus in ["hybrid", "edges"] else 5,
+                    "group_ids": [group_id] if group_id else None
+                },
+                communities_config={
+                    "limit": limit if search_focus in ["hybrid", "communities"] else 3,
+                    "group_ids": [group_id] if group_id else None
+                }
+            )
+            
+            kg_results = await graphiti_client._search(
+                query=query,
+                config=search_config
+            )
+            
+            # Process nodes
+            if kg_results.nodes:
+                results["nodes"] = [
+                    {
+                        "id": node.id,
+                        "name": getattr(node, 'name', ''),
+                        "labels": getattr(node, 'labels', []),
+                        "attributes": getattr(node, 'attributes', {}),
+                        "score": getattr(node, 'score', 0.0)
+                    }
+                    for node in kg_results.nodes
+                ]
+            
+            # Process edges (relationships)
+            if kg_results.edges:
+                results["edges"] = [
+                    {
+                        "id": edge.id,
+                        "source": getattr(edge, 'source_node_id', ''),
+                        "target": getattr(edge, 'target_node_id', ''),
+                        "relation_type": getattr(edge, 'relation_type', ''),
+                        "score": getattr(edge, 'score', 0.0)
+                    }
+                    for edge in kg_results.edges
+                ]
+            
+            # Process communities
+            if kg_results.communities:
+                results["communities"] = [
+                    {
+                        "id": community.id,
+                        "summary": getattr(community, 'summary', ''),
+                        "size": getattr(community, 'size', 0),
+                        "score": getattr(community, 'score', 0.0)
+                    }
+                    for community in kg_results.communities
+                ]
+        
+        # Add traditional hybrid search for comparison
+        if search_focus == "hybrid":
+            traditional_results = await unified_legal_search(
+                postgres_pool, qdrant_client, graphiti_client, openai_client,
+                query, "all", group_id
+            )
+            results["traditional_search"] = traditional_results
+        
+        return {
+            "status": "success",
+            "results": results
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Enhanced search failed: {str(e)}"
+        }

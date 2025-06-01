@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS events (
     excerpts TEXT,
     tags JSONB DEFAULT '[]'::jsonb,
     significance TEXT,
+    group_id TEXT DEFAULT 'default' NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     search_vector tsvector GENERATED ALWAYS AS (
@@ -31,6 +32,7 @@ CREATE TABLE IF NOT EXISTS snippets (
     tags JSONB DEFAULT '[]'::jsonb,
     context TEXT,
     case_type TEXT,
+    group_id TEXT DEFAULT 'default' NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     search_vector tsvector GENERATED ALWAYS AS (
@@ -51,6 +53,7 @@ CREATE TABLE IF NOT EXISTS manual_links (
     relationship_type TEXT NOT NULL,
     confidence FLOAT DEFAULT 1.0,
     notes TEXT,
+    group_id TEXT DEFAULT 'default' NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(event_id, snippet_id, relationship_type)
 );
@@ -60,10 +63,15 @@ CREATE INDEX IF NOT EXISTS idx_events_date ON events(date);
 CREATE INDEX IF NOT EXISTS idx_events_parties ON events USING GIN (parties);
 CREATE INDEX IF NOT EXISTS idx_events_tags ON events USING GIN (tags);
 CREATE INDEX IF NOT EXISTS idx_events_search ON events USING GIN (search_vector);
+CREATE INDEX IF NOT EXISTS idx_events_group_id ON events(group_id);
+CREATE INDEX IF NOT EXISTS idx_events_group_date ON events(group_id, date);
 
 CREATE INDEX IF NOT EXISTS idx_snippets_citation ON snippets(citation);
 CREATE INDEX IF NOT EXISTS idx_snippets_tags ON snippets USING GIN (tags);
 CREATE INDEX IF NOT EXISTS idx_snippets_search ON snippets USING GIN (search_vector);
+CREATE INDEX IF NOT EXISTS idx_snippets_group_id ON snippets(group_id);
+
+CREATE INDEX IF NOT EXISTS idx_manual_links_group_id ON manual_links(group_id);
 
 -- Update trigger for updated_at
 CREATE OR REPLACE FUNCTION update_updated_at_column()

@@ -53,6 +53,7 @@ uv remove <package-name>
 
 - `main.py` - FastMCP server implementation with tool routing
 - `legal_tools.py` - Implementation of all legal research tools
+- `legal_entity_types.py` - Custom Pydantic models for legal domain entities
 - `database_schema.py` - PostgreSQL schema and Qdrant collection definitions
 - `setup.py` - Database initialization script
 - `pyproject.toml` - Project configuration and dependencies
@@ -67,6 +68,9 @@ SueChef is a Model Context Protocol (MCP) server project using FastMCP for legal
 - The system combines three databases: PostgreSQL for structured data, Qdrant for vector search, and Neo4j/Graphiti for knowledge graphs
 - All tools are async and support concurrent operations
 - OpenAI API key is required for generating embeddings
+- **Group-based namespacing** enables multi-client/matter data isolation using `group_id` parameters
+- **Custom entity types** provide precise legal domain modeling with Pydantic schemas
+- **Community detection** identifies clusters of related legal concepts and precedents
 
 ### Available Tools
 
@@ -105,6 +109,11 @@ SueChef is a Model Context Protocol (MCP) server project using FastMCP for legal
 22. **find_citing_opinions** - Find cases citing a precedent
 23. **analyze_courtlistener_precedents** - Analyze precedent evolution
 
+**Advanced Knowledge Graph Features:**
+24. **build_legal_communities** - Build communities to identify legal concept clusters
+25. **search_legal_communities** - Search for communities related to legal queries
+26. **enhanced_legal_search** - Configurable search with SearchConfig for nodes/edges/communities
+
 ## Dependency Management Guidelines
 - Use `uv` to manage python dependencies, builds, etc. 
 - Do not manually edit project config or dependency files
@@ -115,3 +124,39 @@ SueChef is a Model Context Protocol (MCP) server project using FastMCP for legal
 
 ## Knowledge Graphs
 - Use `graphiti` and `neo4j` for knowledge graphs
+
+## Advanced Features
+
+### Custom Entity Types
+SueChef uses custom Pydantic models to define legal domain entities for precise knowledge representation:
+- **Judge** - Judicial officers with appointment dates, courts, political affiliations
+- **Attorney** - Legal practitioners with firm affiliations, bar numbers, specializations
+- **Court** - Judicial venues with jurisdictions, levels, circuit information
+- **LegalCase** - Legal proceedings with case numbers, filing dates, status
+- **Statute** - Laws and regulations with citations, jurisdictions, effective dates
+- **LegalPrecedent** - Case law with holdings, precedential value, overturn status
+- **Evidence** - Documentary, physical, or testimonial evidence with admissibility status
+- **Claim** - Legal causes of action with required elements and burdens of proof
+- **Contract** - Legal agreements with parties, terms, governing law
+
+### Group-Based Namespacing
+All data operations support `group_id` parameters for multi-tenant isolation:
+- Separate different legal matters, clients, or case files
+- Filter searches and analytics by group
+- Maintain data privacy and organization
+- Default group is "default" if not specified
+
+### Community Detection
+Graphiti-powered community detection identifies related legal concepts:
+- Automatically cluster related cases, precedents, and legal concepts
+- Generate summaries for community overviews
+- Filter communities by group for client-specific analysis
+- Use community search for high-level legal topic exploration
+
+### Enhanced Search Capabilities
+Configurable search with multiple focus areas:
+- **Hybrid Search** - Balanced retrieval across nodes, edges, and communities
+- **Node-Focused** - Entity-centric search (judges, courts, cases)
+- **Edge-Focused** - Relationship-centric search (citations, precedent chains)
+- **Community-Focused** - Topic cluster search (legal concept areas)
+- All searches support group filtering and custom limits

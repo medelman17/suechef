@@ -47,7 +47,8 @@ async def list_tools() -> list[Tool]:
                     "document_source": {"type": "string", "description": "Source document"},
                     "excerpts": {"type": "string", "description": "Relevant excerpts"},
                     "tags": {"type": "array", "items": {"type": "string"}, "description": "Tags for categorization"},
-                    "significance": {"type": "string", "description": "Legal significance"}
+                    "significance": {"type": "string", "description": "Legal significance"},
+                    "group_id": {"type": "string", "description": "Group ID for data isolation (default: 'default')"}
                 },
                 "required": ["date", "description"]
             }
@@ -62,7 +63,8 @@ async def list_tools() -> list[Tool]:
                     "key_language": {"type": "string", "description": "Key legal language"},
                     "tags": {"type": "array", "items": {"type": "string"}, "description": "Tags"},
                     "context": {"type": "string", "description": "Context"},
-                    "case_type": {"type": "string", "description": "Type of case"}
+                    "case_type": {"type": "string", "description": "Type of case"},
+                    "group_id": {"type": "string", "description": "Group ID for data isolation (default: 'default')"}
                 },
                 "required": ["citation", "key_language"]
             }
@@ -79,7 +81,8 @@ async def list_tools() -> list[Tool]:
                         "enum": ["vector", "postgres", "knowledge_graph", "all"],
                         "description": "Type of search to perform",
                         "default": "all"
-                    }
+                    },
+                    "group_id": {"type": "string", "description": "Group ID to filter results (optional)"}
                 },
                 "required": ["query"]
             }
@@ -355,6 +358,49 @@ async def list_tools() -> list[Tool]:
                 },
                 "required": ["topic"]
             }
+        ),
+        # Community Detection Tools
+        Tool(
+            name="build_legal_communities",
+            description="Build communities in the knowledge graph to identify related legal concepts",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "group_id": {"type": "string", "description": "Group ID to build communities for (optional)"}
+                }
+            }
+        ),
+        Tool(
+            name="search_legal_communities",
+            description="Search for communities related to a legal query",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query for communities"},
+                    "group_id": {"type": "string", "description": "Group ID to filter communities (optional)"},
+                    "limit": {"type": "integer", "description": "Maximum number of communities to return", "default": 10}
+                },
+                "required": ["query"]
+            }
+        ),
+        Tool(
+            name="enhanced_legal_search",
+            description="Enhanced search using SearchConfig for configurable node/edge/community retrieval",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query"},
+                    "search_focus": {
+                        "type": "string",
+                        "enum": ["hybrid", "nodes", "edges", "communities"],
+                        "description": "Focus of the search",
+                        "default": "hybrid"
+                    },
+                    "group_id": {"type": "string", "description": "Group ID to filter results (optional)"},
+                    "limit": {"type": "integer", "description": "Maximum number of results", "default": 20}
+                },
+                "required": ["query"]
+            }
         )
     ]
 
@@ -456,6 +502,16 @@ async def call_tool(name: str, arguments: dict) -> str:
             result = await courtlistener_tools.find_citing_opinions(**arguments)
         elif name == "analyze_courtlistener_precedents":
             result = await courtlistener_tools.analyze_courtlistener_precedents(**arguments)
+        # Community Detection operations
+        elif name == "build_legal_communities":
+            result = await legal_tools.build_legal_communities(graphiti_client, **arguments)
+        elif name == "search_legal_communities":
+            result = await legal_tools.search_legal_communities(graphiti_client, **arguments)
+        elif name == "enhanced_legal_search":
+            result = await legal_tools.enhanced_legal_search(
+                postgres_pool, qdrant_client, graphiti_client, openai_client,
+                **arguments
+            )
         else:
             return json.dumps({"error": f"Unknown tool: {name}"})
         
