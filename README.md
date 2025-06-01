@@ -80,10 +80,9 @@ cp .env.example .env
 ### 2. Start Services
 ```bash
 # Start everything including SueChef MCP server with Streaming HTTP
-docker-compose up -d
+docker compose up -d
 
-# Or start the new modular architecture version (demo)
-docker-compose --profile modular up -d
+# Note: Main architecture now uses modular design by default
 ```
 
 ### 3. Initialize Database
@@ -94,16 +93,16 @@ uv run python setup.py
 
 ### 4. Access Services
 - **SueChef MCP Server**: `http://localhost:8000/mcp` (Streaming HTTP endpoint)
-- **SueChef Modular**: `http://localhost:8001/mcp` (New modular architecture)
+- **SueChef MCP Server**: Primary service with modular architecture
 - **PostgreSQL**: `localhost:5432` (user: postgres, password: suechef_password)
 - **Qdrant**: `http://localhost:6333` (dashboard at `/dashboard`)
 - **Neo4j**: `http://localhost:7474` (user: neo4j, password: suechef_neo4j_password)
 
 ### 5. Stop Services
 ```bash
-docker-compose down
+docker compose down
 # Add -v to remove volumes and reset data
-docker-compose down -v
+docker compose down -v
 ```
 
 ## Prerequisites
@@ -118,12 +117,12 @@ docker-compose down -v
 **NEW**: SueChef now integrates seamlessly with Claude Desktop for enhanced AI-powered legal research!
 
 ### Quick Setup for Claude Desktop
-1. Start SueChef: `docker-compose up -d`
+1. Start SueChef: `docker compose up -d`
 2. Configure Claude Desktop with the provided config
 3. Access 26+ legal research tools directly in Claude Desktop
 
-**→ See [CLAUDE_DESKTOP_SETUP.md](CLAUDE_DESKTOP_SETUP.md) for complete integration guide**  
-**→ See [example-workflows.md](example-workflows.md) for real-world usage examples**
+**→ See [docs/CLAUDE_DESKTOP_SETUP.md](docs/CLAUDE_DESKTOP_SETUP.md) for complete integration guide**  
+**→ See [docs/example-workflows.md](docs/example-workflows.md) for real-world usage examples**
 
 ## 🔧 Troubleshooting
 
@@ -139,7 +138,7 @@ git pull origin main
 docker compose restart suechef
 ```
 
-**→ See [DATABASE_MIGRATION_FIX.md](DATABASE_MIGRATION_FIX.md) for detailed resolution steps**
+**→ See [docs/DATABASE_MIGRATION_FIX.md](docs/DATABASE_MIGRATION_FIX.md) for detailed resolution steps**
 
 ### Chronology System Issues
 If you encounter array parameter or connection errors:
@@ -153,7 +152,7 @@ git pull origin main
 docker compose restart suechef
 ```
 
-**→ See [CHRONOLOGY_FIXES.md](CHRONOLOGY_FIXES.md) for detailed resolution steps**
+**→ See [docs/CHRONOLOGY_FIXES.md](docs/CHRONOLOGY_FIXES.md) for detailed resolution steps**
 
 ## Installation
 
@@ -174,7 +173,7 @@ uv sync
 
 3. Set up local databases:
    - Install PostgreSQL, Qdrant, and Neo4j locally
-   - Or use Docker for databases only: `docker-compose up -d postgres qdrant neo4j`
+   - Or use Docker for databases only: `docker compose up -d postgres qdrant neo4j`
 
 4. Set up environment variables:
 ```bash
@@ -226,11 +225,8 @@ curl -X POST http://localhost:8000/mcp \
 ### Running Locally (Development)
 
 ```bash
-# Original monolithic version
+# SueChef MCP server (now uses modular architecture)
 uv run python main.py
-
-# New modular architecture version (demo)
-uv run python main_modular.py
 ```
 
 ### Example Workflow
@@ -366,13 +362,13 @@ uv run pytest
 ### Docker Development
 ```bash
 # Rebuild after code changes
-docker-compose build suechef
+docker compose build suechef
 
 # View logs
-docker-compose logs -f suechef
+docker compose logs -f suechef
 
 # Access running container
-docker-compose exec suechef bash
+docker compose exec suechef bash
 ```
 
 ## License

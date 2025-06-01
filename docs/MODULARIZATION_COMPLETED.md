@@ -78,7 +78,7 @@ event_service = EventService(db_manager)
 result = await event_service.create_event(date, description, ...)
 ```
 
-### 3. **Demonstration Server (`main_modular.py`)**
+### 3. **Modular Server (now `main.py`)**
 - ✅ **Mixed architecture** showing migration path
 - ✅ **EventService integration** for 3 event tools
 - ✅ **Legacy tool compatibility** for non-migrated features
