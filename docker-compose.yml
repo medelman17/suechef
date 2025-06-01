@@ -43,7 +43,7 @@ services:
 
   # Neo4j graph database
   neo4j:
-    image: neo4j:5.15-community
+    image: neo4j:5.26.7-community
     container_name: suechef-neo4j
     environment:
       NEO4J_AUTH: neo4j/suechef_neo4j_password
