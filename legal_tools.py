@@ -249,20 +249,46 @@ async def unified_legal_search(
     
     # Knowledge graph search
     if search_type in ["knowledge_graph", "all"]:
-        kg_results = await graphiti_client.search(
-            query, 
-            num_results=20,
-            group_ids=[group_id] if group_id else None
-        )
-        results["knowledge_graph"] = [
-            {
-                "content": r.content,
-                "source": r.source,
-                "score": r.score,
-                "id": r.id
-            }
-            for r in kg_results
-        ]
+        try:
+            kg_results = await graphiti_client.search(
+                query, 
+                num_results=20,
+                group_ids=[group_id] if group_id else None
+            )
+            
+            # Handle different result types safely
+            graph_results = []
+            for r in kg_results:
+                result_item = {
+                    "id": getattr(r, 'id', ''),
+                    "score": getattr(r, 'score', 0.0)
+                }
+                
+                # Handle different object types
+                if hasattr(r, 'content'):
+                    result_item["content"] = r.content
+                    result_item["type"] = "episode"
+                elif hasattr(r, 'name'):
+                    result_item["content"] = getattr(r, 'name', '')
+                    result_item["type"] = "node"
+                elif hasattr(r, 'relation_type'):
+                    result_item["content"] = f"Relationship: {getattr(r, 'relation_type', '')}"
+                    result_item["type"] = "edge"
+                else:
+                    result_item["content"] = str(r)
+                    result_item["type"] = "unknown"
+                
+                if hasattr(r, 'source'):
+                    result_item["source"] = r.source
+                
+                graph_results.append(result_item)
+            
+            results["knowledge_graph"] = graph_results
+            
+        except Exception as e:
+            # Graceful fallback if knowledge graph search fails
+            results["knowledge_graph"] = []
+            results["knowledge_graph_error"] = f"Search failed: {str(e)}"
     
     return results
 
