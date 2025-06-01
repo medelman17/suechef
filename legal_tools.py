@@ -238,7 +238,6 @@ async def unified_legal_search(
         snippet_results = qdrant_client.search(
             collection_name="legal_snippets",
             query_vector=query_embedding,
-            query_filter=search_filter,
             limit=10
         )
         
