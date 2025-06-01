@@ -1,15 +1,22 @@
-```
-   _____ _   _ ______ _____ _    _ ______ ______
-  / ____| | | |  ____/ ____| |  | |  ____|  ____|
- | (___ | | | | |__ | |    | |__| | |__  | |__
-  \___ \| | | |  __|| |    |  __  |  __| |  __|
-  ____) | |_| | |___| |____| |  | | |____| |
- |_____/ \___/|______\_____|_|  |_|______|_|     👨‍🍳⚖️
-```
+<p align="center">
+  <img src="https://raw.githubusercontent.com/fortai-legal/suechef/main/media/logo.png" alt="SueChef Logo" width="400">
+</p>
 
-# SueChef - Legal Research MCP
+<h1 align="center">SueChef - Legal Research MCP</h1>
 
-*Your AI sous chef for cooking up winning legal strategies*
+<p align="center">
+  <em>Your AI sous chef for cooking up winning legal strategies</em>
+</p>
+
+<p align="center">
+  <a href="#features">Features</a> •
+  <a href="#installation">Installation</a> •
+  <a href="#usage">Usage</a> •
+  <a href="#architecture--the-suechef-kitchen-">Architecture</a> •
+  <a href="#license">License</a>
+</p>
+
+---
 
 SueChef is a powerful legal research MCP (Model Context Protocol) that combines PostgreSQL, Qdrant vector database, and Graphiti knowledge graphs to help you prepare the perfect legal case - with all the right ingredients!
 
