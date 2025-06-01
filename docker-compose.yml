@@ -56,8 +56,8 @@ services:
       NEO4J_dbms_memory_heap_max__size: 2G
       NEO4J_dbms_memory_pagecache_size: 1G
     ports:
-      - "7474:7474"  # HTTP
-      - "7687:7687"  # Bolt
+      - "7474:7474" # HTTP
+      - "7687:7687" # Bolt
     volumes:
       - neo4j_data:/data
       - neo4j_logs:/logs
@@ -103,6 +103,7 @@ services:
       - "8000:8000"
     volumes:
       - .:/app
+      - suechef_venv:/app/.venv
     working_dir: /app
     command: ["uv", "run", "python", "main.py"]
     healthcheck:
@@ -146,6 +147,7 @@ services:
       - "8001:8001"
     volumes:
       - .:/app
+      - suechef_modular_venv:/app/.venv
     working_dir: /app
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/mcp"]
@@ -170,6 +172,10 @@ volumes:
   neo4j_import:
     driver: local
   neo4j_plugins:
+    driver: local
+  suechef_venv:
+    driver: local
+  suechef_modular_venv:
     driver: local
 
 networks:

@@ -19,6 +19,15 @@ from database_schema import POSTGRES_SCHEMA, QDRANT_COLLECTIONS
 import legal_tools
 import courtlistener_tools
 
+import sentry_sdk
+
+sentry_sdk.init(
+    dsn="https://fd3d6a0e4c5b7f11180318cac807f590@o4508196072325120.ingest.us.sentry.io/4509425243521024",
+    # Add data like request headers and IP for users,
+    # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
+    send_default_pii=True,
+)
+
 # Initialize FastMCP server
 mcp = FastMCP("suechef")
 
@@ -355,6 +364,11 @@ async def analyze_courtlistener_precedents(
     return await courtlistener_tools.analyze_courtlistener_precedents(
         topic, jurisdiction, min_citations, date_range_years
     )
+
+@mcp.tool()
+async def test_courtlistener_connection() -> Dict[str, Any]:
+    """Test CourtListener API connection and authentication."""
+    return await courtlistener_tools.test_courtlistener_connection()
 
 # Community Detection operations
 @mcp.tool()

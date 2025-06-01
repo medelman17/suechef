@@ -6,6 +6,8 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams
 import neo4j
 import os
+import sys
+from graphiti_core import Graphiti
 
 from database_schema import POSTGRES_SCHEMA, QDRANT_COLLECTIONS
 
@@ -93,6 +95,39 @@ def test_neo4j():
         print("Make sure Neo4j is running and credentials are correct")
 
 
+async def test_courtlistener_setup():
+    """Test CourtListener configuration."""
+    print("\n🔍 CourtListener Setup Check...")
+    
+    api_key = os.getenv("COURTLISTENER_API_KEY")
+    if not api_key:
+        print("❌ COURTLISTENER_API_KEY not found in environment")
+        print("📋 To fix this:")
+        print("   1. Get API key from: https://www.courtlistener.com/help/api/rest/")
+        print("   2. Add to .env file: COURTLISTENER_API_KEY=your_key_here")
+        print("   3. Restart Docker: docker-compose restart suechef")
+        return False
+    else:
+        print(f"✅ COURTLISTENER_API_KEY configured (length: {len(api_key)})")
+        
+        # Test basic connection
+        import aiohttp
+        try:
+            async with aiohttp.ClientSession() as session:
+                headers = {"Authorization": f"Token {api_key}"}
+                async with session.get("https://www.courtlistener.com/api/rest/v4/courts/", 
+                                     headers=headers, timeout=10) as response:
+                    if response.status == 200:
+                        print("✅ CourtListener API connection successful")
+                        return True
+                    else:
+                        print(f"❌ CourtListener API returned status {response.status}")
+                        return False
+        except Exception as e:
+            print(f"❌ CourtListener API connection failed: {str(e)}")
+            return False
+
+
 async def main():
     """Run all setup steps."""
     print("=== Unified Legal MCP Setup ===\\n")
@@ -107,6 +142,10 @@ async def main():
     
     # Neo4j test
     test_neo4j()
+    print()
+    
+    # CourtListener test
+    await test_courtlistener_setup()
     print()
     
     print("Setup complete!")

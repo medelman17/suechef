@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "aiohttp>=3.12.6",
     "asyncpg>=0.30.0",
+    "dotenv>=0.9.9",
     "eyecite>=2.7.5",
     "fastmcp>=2.5.2",
     "graphiti-core>=0.11.6",
