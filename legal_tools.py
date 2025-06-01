@@ -3,16 +3,20 @@
 import asyncio
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 
 import asyncpg
 from qdrant_client.models import PointStruct, Filter, FieldCondition, MatchValue
 import openai
 from graphiti_core import Graphiti
-from graphiti_core.nodes import EntityNode, EpisodeNode
-from graphiti_core.edges import EntityRelation, EpisodicEdge
-from graphiti_core.search import SearchConfig
+from graphiti_core.nodes import EpisodeType
+from graphiti_core.search.search_config_recipes import (
+    COMBINED_HYBRID_SEARCH_RRF,
+    NODE_HYBRID_SEARCH_RRF,
+    EDGE_HYBRID_SEARCH_RRF,
+    COMMUNITY_HYBRID_SEARCH_RRF
+)
 import numpy as np
 
 # Import custom legal entity types
@@ -90,11 +94,11 @@ async def add_event(
         episode_content += f"\\nExcerpts: {excerpts}"
     
     await graphiti_client.add_episode(
-        content=episode_content,
-        source=document_source or "Legal Timeline",
-        id=str(event_id),
-        timestamp=datetime.strptime(date, "%Y-%m-%d"),
-        entity_types=LITIGATION_ENTITIES,
+        name=f"Legal Event - {date}",
+        episode_body=episode_content,
+        source=EpisodeType.text,
+        source_description=document_source or "Legal Timeline",
+        reference_time=datetime.strptime(date, "%Y-%m-%d"),
         group_id=group_id
     )
     
@@ -163,11 +167,11 @@ async def create_snippet(
         content += f"\\nContext: {context}"
     
     await graphiti_client.add_episode(
-        content=content,
-        source=citation,
-        id=str(snippet_id),
-        timestamp=datetime.now(),
-        entity_types=RESEARCH_ENTITIES,
+        name=f"Legal Snippet - {citation}",
+        episode_body=content,
+        source=EpisodeType.text,
+        source_description=citation,
+        reference_time=datetime.now(),
         group_id=group_id
     )
     
@@ -349,9 +353,11 @@ async def ingest_legal_document(
     
     # Process document through Graphiti
     result = await graphiti_client.add_episode(
-        content=document_text,
-        source=title,
-        timestamp=datetime.strptime(date, "%Y-%m-%d") if date else datetime.now()
+        name=title,
+        episode_body=document_text,
+        source=EpisodeType.text,
+        source_description=document_type or "Legal Document",
+        reference_time=datetime.strptime(date, "%Y-%m-%d") if date else datetime.now()
     )
     
     return {
@@ -1034,18 +1040,10 @@ async def search_legal_communities(
 ) -> Dict[str, Any]:
     """Search for communities related to a legal query."""
     try:
-        # Use SearchConfig for community-focused search
-        search_config = SearchConfig(
-            limit=limit,
-            communities_config={
-                "limit": limit,
-                "group_ids": [group_id] if group_id else None
-            }
-        )
-        
+        # Use predefined community search recipe
         results = await graphiti_client._search(
             query=query,
-            config=search_config
+            config=COMMUNITY_HYBRID_SEARCH_RRF
         )
         
         communities = []
@@ -1086,28 +1084,21 @@ async def enhanced_legal_search(
     try:
         results = {"query": query, "group_id": group_id, "search_focus": search_focus}
         
-        # Graphiti enhanced search with SearchConfig
+        # Graphiti enhanced search with predefined recipes
         if search_focus in ["hybrid", "nodes", "edges", "communities"]:
-            # Configure search based on focus
-            search_config = SearchConfig(
-                limit=limit,
-                nodes_config={
-                    "limit": limit if search_focus in ["hybrid", "nodes"] else 5,
-                    "group_ids": [group_id] if group_id else None
-                },
-                edges_config={
-                    "limit": limit if search_focus in ["hybrid", "edges"] else 5,
-                    "group_ids": [group_id] if group_id else None
-                },
-                communities_config={
-                    "limit": limit if search_focus in ["hybrid", "communities"] else 3,
-                    "group_ids": [group_id] if group_id else None
-                }
-            )
+            # Select appropriate search recipe based on focus
+            config_map = {
+                "nodes": NODE_HYBRID_SEARCH_RRF,
+                "edges": EDGE_HYBRID_SEARCH_RRF,
+                "communities": COMMUNITY_HYBRID_SEARCH_RRF,
+                "hybrid": COMBINED_HYBRID_SEARCH_RRF
+            }
+            
+            selected_config = config_map.get(search_focus, COMBINED_HYBRID_SEARCH_RRF)
             
             kg_results = await graphiti_client._search(
                 query=query,
-                config=search_config
+                config=selected_config
             )
             
             # Process nodes

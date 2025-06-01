@@ -72,6 +72,16 @@ SueChef is a Model Context Protocol (MCP) server project using FastMCP for legal
 - **Custom entity types** provide precise legal domain modeling with Pydantic schemas
 - **Community detection** identifies clusters of related legal concepts and precedents
 
+### Graphiti Implementation
+- **IMPORTANT**: See `GRAPHITI_BEST_PRACTICES.md` for comprehensive Graphiti usage guidelines
+- Use `graphiti-core>=0.11.6` with proper API patterns
+- Must call `await graphiti_client.build_indices_and_constraints()` after initialization
+- Use `EpisodeType.text` for source parameter, not strings
+- Use `episode_body` parameter, not `content`
+- Entity extraction is automatic - do not pass `entity_types` parameter
+- Use search recipes from `graphiti_core.search.search_config_recipes`
+- Pass `group_ids` as list: `[group_id]` not single string
+
 ### Available Tools
 
 **Event Management:**

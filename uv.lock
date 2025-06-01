@@ -1156,6 +1156,35 @@ wheels = [
 ]
 
 [[package]]
+name = "suechef"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "asyncpg" },
+    { name = "eyecite" },
+    { name = "fastmcp" },
+    { name = "graphiti-core" },
+    { name = "neo4j" },
+    { name = "psycopg2-binary" },
+    { name = "qdrant-client" },
+    { name = "sqlalchemy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aiohttp", specifier = ">=3.12.6" },
+    { name = "asyncpg", specifier = ">=0.30.0" },
+    { name = "eyecite", specifier = ">=2.7.5" },
+    { name = "fastmcp", specifier = ">=2.5.2" },
+    { name = "graphiti-core", specifier = ">=0.11.6" },
+    { name = "neo4j", specifier = ">=5.28.1" },
+    { name = "psycopg2-binary", specifier = ">=2.9.10" },
+    { name = "qdrant-client", specifier = ">=1.14.2" },
+    { name = "sqlalchemy", specifier = ">=2.0.41" },
+]
+
+[[package]]
 name = "tenacity"
 version = "9.1.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1210,35 +1239,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/f8/b1/0c11f5058406b3af7609f121aaa6b609744687f1d158b3c3a5bf4cc94238/typing_inspection-0.4.1.tar.gz", hash = "sha256:6ae134cc0203c33377d43188d4064e9b357dba58cff3185f22924610e70a9d28", size = 75726, upload-time = "2025-05-21T18:55:23.885Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/17/69/cd203477f944c353c31bade965f880aa1061fd6bf05ded0726ca845b6ff7/typing_inspection-0.4.1-py3-none-any.whl", hash = "sha256:389055682238f53b04f7badcb49b989835495a96700ced5dab2d8feae4b26f51", size = 14552, upload-time = "2025-05-21T18:55:22.152Z" },
-]
-
-[[package]]
-name = "unified-legal-mcp"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "aiohttp" },
-    { name = "asyncpg" },
-    { name = "eyecite" },
-    { name = "fastmcp" },
-    { name = "graphiti-core" },
-    { name = "neo4j" },
-    { name = "psycopg2-binary" },
-    { name = "qdrant-client" },
-    { name = "sqlalchemy" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "aiohttp", specifier = ">=3.12.6" },
-    { name = "asyncpg", specifier = ">=0.30.0" },
-    { name = "eyecite", specifier = ">=2.7.5" },
-    { name = "fastmcp", specifier = ">=2.5.2" },
-    { name = "graphiti-core", specifier = ">=0.11.6" },
-    { name = "neo4j", specifier = ">=5.28.1" },
-    { name = "psycopg2-binary", specifier = ">=2.9.10" },
-    { name = "qdrant-client", specifier = ">=1.14.2" },
-    { name = "sqlalchemy", specifier = ">=2.0.41" },
 ]
 
 [[package]]

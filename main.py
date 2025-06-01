@@ -5,13 +5,11 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 
 from fastmcp import FastMCP
-from fastmcp.fastmcp.types import Tool
 import asyncpg
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
 from graphiti_core import Graphiti
-from graphiti_core.nodes import EntityNode, EpisodeNode
-from graphiti_core.edges import EntityRelation, EpisodicEdge
+from graphiti_core.nodes import EpisodeType
 import neo4j
 from sqlalchemy import create_engine, text
 import numpy as np
@@ -24,500 +22,557 @@ import courtlistener_tools
 # Initialize FastMCP server
 mcp = FastMCP("suechef")
 
-# Global clients (will be initialized on startup)
+# Global clients (will be initialized on first use)
 postgres_pool = None
 qdrant_client = None
 graphiti_client = None
 neo4j_driver = None
+_initialized = False
 
 
-@mcp.server.list_tools()
-async def list_tools() -> list[Tool]:
-    """List all available legal research tools."""
-    return [
-        Tool(
-            name="add_event",
-            description="Add chronology events with automatic vector and knowledge graph storage",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "date": {"type": "string", "description": "Event date (YYYY-MM-DD)"},
-                    "description": {"type": "string", "description": "Event description"},
-                    "parties": {"type": "array", "items": {"type": "string"}, "description": "Parties involved"},
-                    "document_source": {"type": "string", "description": "Source document"},
-                    "excerpts": {"type": "string", "description": "Relevant excerpts"},
-                    "tags": {"type": "array", "items": {"type": "string"}, "description": "Tags for categorization"},
-                    "significance": {"type": "string", "description": "Legal significance"},
-                    "group_id": {"type": "string", "description": "Group ID for data isolation (default: 'default')"}
-                },
-                "required": ["date", "description"]
-            }
-        ),
-        Tool(
-            name="create_snippet",
-            description="Create legal research snippets (case law, precedents, statutes)",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "citation": {"type": "string", "description": "Legal citation"},
-                    "key_language": {"type": "string", "description": "Key legal language"},
-                    "tags": {"type": "array", "items": {"type": "string"}, "description": "Tags"},
-                    "context": {"type": "string", "description": "Context"},
-                    "case_type": {"type": "string", "description": "Type of case"},
-                    "group_id": {"type": "string", "description": "Group ID for data isolation (default: 'default')"}
-                },
-                "required": ["citation", "key_language"]
-            }
-        ),
-        Tool(
-            name="unified_legal_search",
-            description="Ultimate hybrid search across PostgreSQL + Qdrant + Graphiti",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Search query"},
-                    "search_type": {
-                        "type": "string",
-                        "enum": ["vector", "postgres", "knowledge_graph", "all"],
-                        "description": "Type of search to perform",
-                        "default": "all"
-                    },
-                    "group_id": {"type": "string", "description": "Group ID to filter results (optional)"}
-                },
-                "required": ["query"]
-            }
-        ),
-        Tool(
-            name="postgres_full_text_search",
-            description="Advanced PostgreSQL full-text search with relevance ranking",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Search query"},
-                    "search_type": {
-                        "type": "string",
-                        "enum": ["events", "snippets", "all"],
-                        "description": "What to search",
-                        "default": "all"
-                    }
-                },
-                "required": ["query"]
-            }
-        ),
-        Tool(
-            name="postgres_advanced_query",
-            description="Execute complex PostgreSQL queries with JSONB operations",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "sql_condition": {"type": "string", "description": "SQL WHERE clause condition"},
-                    "target_table": {
-                        "type": "string",
-                        "enum": ["events", "snippets"],
-                        "description": "Table to query"
-                    },
-                    "parameters": {"type": "object", "description": "Query parameters"}
-                },
-                "required": ["sql_condition", "target_table"]
-            }
-        ),
-        Tool(
-            name="ingest_legal_document",
-            description="Feed entire legal documents to Graphiti for automatic processing",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "document_text": {"type": "string", "description": "Full document text"},
-                    "title": {"type": "string", "description": "Document title"},
-                    "date": {"type": "string", "description": "Document date"},
-                    "document_type": {"type": "string", "description": "Type of document"}
-                },
-                "required": ["document_text", "title"]
-            }
-        ),
-        Tool(
-            name="temporal_legal_query",
-            description="Ask temporal questions about legal knowledge evolution",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "question": {"type": "string", "description": "Temporal question"},
-                    "time_focus": {"type": "string", "description": "Time period of interest"},
-                    "entity_focus": {"type": "string", "description": "Specific entity to focus on"}
-                },
-                "required": ["question"]
-            }
-        ),
-        Tool(
-            name="create_manual_link",
-            description="Create explicit relationships between events and legal precedents",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "event_id": {"type": "string", "description": "Event ID"},
-                    "snippet_id": {"type": "string", "description": "Snippet ID"},
-                    "relationship_type": {"type": "string", "description": "Type of relationship"},
-                    "confidence": {"type": "number", "description": "Confidence score (0-1)"},
-                    "notes": {"type": "string", "description": "Additional notes"}
-                },
-                "required": ["event_id", "snippet_id", "relationship_type"]
-            }
-        ),
-        Tool(
-            name="get_legal_analytics",
-            description="Comprehensive legal research analytics using PostgreSQL power",
-            inputSchema={
-                "type": "object",
-                "properties": {}
-            }
-        ),
-        Tool(
-            name="get_system_status",
-            description="Health check for all system components",
-            inputSchema={
-                "type": "object",
-                "properties": {}
-            }
-        ),
-        # READ operations
-        Tool(
-            name="get_event",
-            description="Get a single event by ID",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "event_id": {"type": "string", "description": "Event ID (UUID)"}
-                },
-                "required": ["event_id"]
-            }
-        ),
-        Tool(
-            name="get_snippet",
-            description="Get a single snippet by ID",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "snippet_id": {"type": "string", "description": "Snippet ID (UUID)"}
-                },
-                "required": ["snippet_id"]
-            }
-        ),
-        Tool(
-            name="list_events",
-            description="List events with optional filtering by date, parties, or tags",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "limit": {"type": "integer", "description": "Maximum number of results", "default": 50},
-                    "offset": {"type": "integer", "description": "Offset for pagination", "default": 0},
-                    "date_from": {"type": "string", "description": "Start date (YYYY-MM-DD)"},
-                    "date_to": {"type": "string", "description": "End date (YYYY-MM-DD)"},
-                    "parties_filter": {"type": "array", "items": {"type": "string"}, "description": "Filter by parties"},
-                    "tags_filter": {"type": "array", "items": {"type": "string"}, "description": "Filter by tags"}
-                }
-            }
-        ),
-        Tool(
-            name="list_snippets",
-            description="List snippets with optional filtering by case type or tags",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "limit": {"type": "integer", "description": "Maximum number of results", "default": 50},
-                    "offset": {"type": "integer", "description": "Offset for pagination", "default": 0},
-                    "case_type": {"type": "string", "description": "Filter by case type"},
-                    "tags_filter": {"type": "array", "items": {"type": "string"}, "description": "Filter by tags"}
-                }
-            }
-        ),
-        # UPDATE operations
-        Tool(
-            name="update_event",
-            description="Update an existing event (only specified fields will be updated)",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "event_id": {"type": "string", "description": "Event ID to update"},
-                    "date": {"type": "string", "description": "Event date (YYYY-MM-DD)"},
-                    "description": {"type": "string", "description": "Event description"},
-                    "parties": {"type": "array", "items": {"type": "string"}, "description": "Parties involved"},
-                    "document_source": {"type": "string", "description": "Source document"},
-                    "excerpts": {"type": "string", "description": "Relevant excerpts"},
-                    "tags": {"type": "array", "items": {"type": "string"}, "description": "Tags"},
-                    "significance": {"type": "string", "description": "Legal significance"}
-                },
-                "required": ["event_id"]
-            }
-        ),
-        Tool(
-            name="update_snippet",
-            description="Update an existing snippet (only specified fields will be updated)",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "snippet_id": {"type": "string", "description": "Snippet ID to update"},
-                    "citation": {"type": "string", "description": "Legal citation"},
-                    "key_language": {"type": "string", "description": "Key legal language"},
-                    "tags": {"type": "array", "items": {"type": "string"}, "description": "Tags"},
-                    "context": {"type": "string", "description": "Context"},
-                    "case_type": {"type": "string", "description": "Type of case"}
-                },
-                "required": ["snippet_id"]
-            }
-        ),
-        # DELETE operations
-        Tool(
-            name="delete_event",
-            description="Delete an event from all systems",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "event_id": {"type": "string", "description": "Event ID to delete"}
-                },
-                "required": ["event_id"]
-            }
-        ),
-        Tool(
-            name="delete_snippet",
-            description="Delete a snippet from all systems",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "snippet_id": {"type": "string", "description": "Snippet ID to delete"}
-                },
-                "required": ["snippet_id"]
-            }
-        ),
-        # CourtListener integration tools
-        Tool(
-            name="search_courtlistener_opinions",
-            description="Search CourtListener for court opinions matching query",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Search terms (e.g., 'landlord tenant water damage')"},
-                    "court": {"type": "string", "description": "Court abbreviation (e.g., 'scotus', 'ca9')"},
-                    "date_after": {"type": "string", "description": "Filter opinions after this date (YYYY-MM-DD)"},
-                    "date_before": {"type": "string", "description": "Filter opinions before this date"},
-                    "cited_gt": {"type": "integer", "description": "Minimum number of times opinion has been cited"},
-                    "limit": {"type": "integer", "description": "Maximum results to return", "default": 20}
-                },
-                "required": ["query"]
-            }
-        ),
-        Tool(
-            name="import_courtlistener_opinion",
-            description="Import a CourtListener opinion into your legal research system",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "opinion_id": {"type": "integer", "description": "CourtListener opinion ID"},
-                    "add_as_snippet": {"type": "boolean", "description": "Create a snippet in your local system", "default": true},
-                    "auto_link_events": {"type": "boolean", "description": "Attempt to link with existing chronology events", "default": true}
-                },
-                "required": ["opinion_id"]
-            }
-        ),
-        Tool(
-            name="search_courtlistener_dockets",
-            description="Search CourtListener dockets (active cases) for procedural history and party information",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "case_name": {"type": "string", "description": "Case name to search for"},
-                    "docket_number": {"type": "string", "description": "Docket number"},
-                    "court": {"type": "string", "description": "Court abbreviation"},
-                    "date_filed_after": {"type": "string", "description": "Cases filed after this date (YYYY-MM-DD)"},
-                    "date_filed_before": {"type": "string", "description": "Cases filed before this date"},
-                    "limit": {"type": "integer", "description": "Maximum results", "default": 20}
-                }
-            }
-        ),
-        Tool(
-            name="find_citing_opinions",
-            description="Find all opinions that cite a specific case",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "citation": {"type": "string", "description": "Citation to search for (e.g., '123 F.3d 456')"},
-                    "limit": {"type": "integer", "description": "Maximum results", "default": 20}
-                },
-                "required": ["citation"]
-            }
-        ),
-        Tool(
-            name="analyze_courtlistener_precedents",
-            description="Analyze precedent evolution on a topic using CourtListener data",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "topic": {"type": "string", "description": "Legal topic to analyze"},
-                    "jurisdiction": {"type": "string", "description": "Court jurisdiction (e.g., 'ca9')"},
-                    "min_citations": {"type": "integer", "description": "Minimum citation count", "default": 5},
-                    "date_range_years": {"type": "integer", "description": "Years of history to analyze", "default": 30}
-                },
-                "required": ["topic"]
-            }
-        ),
-        # Community Detection Tools
-        Tool(
-            name="build_legal_communities",
-            description="Build communities in the knowledge graph to identify related legal concepts",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "group_id": {"type": "string", "description": "Group ID to build communities for (optional)"}
-                }
-            }
-        ),
-        Tool(
-            name="search_legal_communities",
-            description="Search for communities related to a legal query",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Search query for communities"},
-                    "group_id": {"type": "string", "description": "Group ID to filter communities (optional)"},
-                    "limit": {"type": "integer", "description": "Maximum number of communities to return", "default": 10}
-                },
-                "required": ["query"]
-            }
-        ),
-        Tool(
-            name="enhanced_legal_search",
-            description="Enhanced search using SearchConfig for configurable node/edge/community retrieval",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Search query"},
-                    "search_focus": {
-                        "type": "string",
-                        "enum": ["hybrid", "nodes", "edges", "communities"],
-                        "description": "Focus of the search",
-                        "default": "hybrid"
-                    },
-                    "group_id": {"type": "string", "description": "Group ID to filter results (optional)"},
-                    "limit": {"type": "integer", "description": "Maximum number of results", "default": 20}
-                },
-                "required": ["query"]
-            }
-        )
-    ]
-
-
-@mcp.server.call_tool()
-async def call_tool(name: str, arguments: dict) -> str:
-    """Route tool calls to appropriate handlers."""
-    global postgres_pool, qdrant_client, graphiti_client, neo4j_driver
-    
-    # Ensure clients are initialized
-    if not postgres_pool:
+async def ensure_initialized():
+    """Ensure all clients are initialized before tool execution."""
+    global _initialized
+    if not _initialized:
         await initialize_clients()
-    
-    # Initialize OpenAI client
-    openai_client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
-    
-    try:
-        if name == "add_event":
-            result = await legal_tools.add_event(
-                postgres_pool, qdrant_client, graphiti_client, openai_client,
-                **arguments
-            )
-        elif name == "create_snippet":
-            result = await legal_tools.create_snippet(
-                postgres_pool, qdrant_client, graphiti_client, openai_client,
-                **arguments
-            )
-        elif name == "unified_legal_search":
-            result = await legal_tools.unified_legal_search(
-                postgres_pool, qdrant_client, graphiti_client, openai_client,
-                **arguments
-            )
-        elif name == "postgres_full_text_search":
-            result = await legal_tools.postgres_full_text_search(
-                postgres_pool, **arguments
-            )
-        elif name == "postgres_advanced_query":
-            result = await legal_tools.postgres_advanced_query(
-                postgres_pool, **arguments
-            )
-        elif name == "ingest_legal_document":
-            result = await legal_tools.ingest_legal_document(
-                graphiti_client, **arguments
-            )
-        elif name == "temporal_legal_query":
-            result = await legal_tools.temporal_legal_query(
-                graphiti_client, **arguments
-            )
-        elif name == "create_manual_link":
-            result = await legal_tools.create_manual_link(
-                postgres_pool, **arguments
-            )
-        elif name == "get_legal_analytics":
-            result = await legal_tools.get_legal_analytics(postgres_pool)
-        elif name == "get_system_status":
-            result = await legal_tools.get_system_status(
-                postgres_pool, qdrant_client, neo4j_driver
-            )
-        # READ operations
-        elif name == "get_event":
-            result = await legal_tools.get_event(postgres_pool, **arguments)
-        elif name == "get_snippet":
-            result = await legal_tools.get_snippet(postgres_pool, **arguments)
-        elif name == "list_events":
-            result = await legal_tools.list_events(postgres_pool, **arguments)
-        elif name == "list_snippets":
-            result = await legal_tools.list_snippets(postgres_pool, **arguments)
-        # UPDATE operations
-        elif name == "update_event":
-            result = await legal_tools.update_event(
-                postgres_pool, qdrant_client, graphiti_client, openai_client,
-                **arguments
-            )
-        elif name == "update_snippet":
-            result = await legal_tools.update_snippet(
-                postgres_pool, qdrant_client, graphiti_client, openai_client,
-                **arguments
-            )
-        # DELETE operations
-        elif name == "delete_event":
-            result = await legal_tools.delete_event(
-                postgres_pool, qdrant_client, **arguments
-            )
-        elif name == "delete_snippet":
-            result = await legal_tools.delete_snippet(
-                postgres_pool, qdrant_client, **arguments
-            )
-        # CourtListener operations
-        elif name == "search_courtlistener_opinions":
-            result = await courtlistener_tools.search_courtlistener_opinions(**arguments)
-        elif name == "import_courtlistener_opinion":
-            result = await courtlistener_tools.import_courtlistener_opinion(
-                postgres_pool, qdrant_client, graphiti_client, openai_client,
-                **arguments
-            )
-        elif name == "search_courtlistener_dockets":
-            result = await courtlistener_tools.search_courtlistener_dockets(**arguments)
-        elif name == "find_citing_opinions":
-            result = await courtlistener_tools.find_citing_opinions(**arguments)
-        elif name == "analyze_courtlistener_precedents":
-            result = await courtlistener_tools.analyze_courtlistener_precedents(**arguments)
-        # Community Detection operations
-        elif name == "build_legal_communities":
-            result = await legal_tools.build_legal_communities(graphiti_client, **arguments)
-        elif name == "search_legal_communities":
-            result = await legal_tools.search_legal_communities(graphiti_client, **arguments)
-        elif name == "enhanced_legal_search":
-            result = await legal_tools.enhanced_legal_search(
-                postgres_pool, qdrant_client, graphiti_client, openai_client,
-                **arguments
-            )
-        else:
-            return json.dumps({"error": f"Unknown tool: {name}"})
-        
-        return json.dumps(result, default=str)
-    except Exception as e:
-        return json.dumps({"error": str(e), "tool": name})
+        await initialize_databases()
+        _initialized = True
+
+# Tool definitions using @mcp.tool() decorator
+
+@mcp.tool()
+async def add_event(
+    date: str,
+    description: str,
+    parties: Optional[List[str]] = None,
+    document_source: Optional[str] = None,
+    excerpts: Optional[str] = None,
+    tags: Optional[List[str]] = None,
+    significance: Optional[str] = None,
+    group_id: str = "default"
+) -> Dict[str, Any]:
+    """Add chronology events with automatic vector and knowledge graph storage."""
+    await ensure_initialized()
+    return await legal_tools.add_event(
+        postgres_pool, qdrant_client, graphiti_client, openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", "")),
+        date, description, parties, document_source, excerpts, tags, significance, group_id
+    )
+
+@mcp.tool()
+async def create_snippet(
+    citation: str,
+    key_language: str,
+    tags: Optional[List[str]] = None,
+    context: Optional[str] = None,
+    case_type: Optional[str] = None,
+    group_id: str = "default"
+) -> Dict[str, Any]:
+    """Create legal research snippets (case law, precedents, statutes)."""
+    return await legal_tools.create_snippet(
+        postgres_pool, qdrant_client, graphiti_client, openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", "")),
+        citation, key_language, tags, context, case_type, group_id
+    )
+
+@mcp.tool()
+async def unified_legal_search(
+    query: str,
+    search_type: str = "all",
+    group_id: Optional[str] = None
+) -> Dict[str, Any]:
+    """Ultimate hybrid search across PostgreSQL + Qdrant + Graphiti."""
+    return await legal_tools.unified_legal_search(
+        postgres_pool, qdrant_client, graphiti_client, openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", "")),
+        query, search_type, group_id
+    )
+
+@mcp.tool()
+async def postgres_full_text_search(
+    query: str,
+    search_type: str = "all"
+) -> Dict[str, Any]:
+    """Advanced PostgreSQL full-text search with relevance ranking."""
+    return await legal_tools.postgres_full_text_search(postgres_pool, query, search_type)
+
+@mcp.tool()
+async def postgres_advanced_query(
+    sql_condition: str,
+    target_table: str,
+    parameters: Optional[Dict] = None
+) -> Dict[str, Any]:
+    """Execute complex PostgreSQL queries with JSONB operations."""
+    return await legal_tools.postgres_advanced_query(postgres_pool, sql_condition, target_table, parameters)
+
+@mcp.tool()
+async def ingest_legal_document(
+    document_text: str,
+    title: str,
+    date: Optional[str] = None,
+    document_type: Optional[str] = None
+) -> Dict[str, Any]:
+    """Feed entire legal documents to Graphiti for automatic processing."""
+    return await legal_tools.ingest_legal_document(graphiti_client, document_text, title, date, document_type)
+
+@mcp.tool()
+async def temporal_legal_query(
+    question: str,
+    time_focus: Optional[str] = None,
+    entity_focus: Optional[str] = None
+) -> Dict[str, Any]:
+    """Ask temporal questions about legal knowledge evolution."""
+    return await legal_tools.temporal_legal_query(graphiti_client, question, time_focus, entity_focus)
+
+@mcp.tool()
+async def create_manual_link(
+    event_id: str,
+    snippet_id: str,
+    relationship_type: str,
+    confidence: Optional[float] = None,
+    notes: Optional[str] = None
+) -> Dict[str, Any]:
+    """Create explicit relationships between events and legal precedents."""
+    return await legal_tools.create_manual_link(
+        postgres_pool, event_id, snippet_id, relationship_type, confidence, notes
+    )
+
+@mcp.tool()
+async def get_legal_analytics() -> Dict[str, Any]:
+    """Comprehensive legal research analytics using PostgreSQL power."""
+    return await legal_tools.get_legal_analytics(postgres_pool)
+
+@mcp.tool()
+async def get_system_status() -> Dict[str, Any]:
+    """Health check for all system components."""
+    await ensure_initialized()
+    return await legal_tools.get_system_status(postgres_pool, qdrant_client, neo4j_driver)
+
+# READ operations
+@mcp.tool()
+async def get_event(event_id: str) -> Dict[str, Any]:
+    """Get a single event by ID."""
+    return await legal_tools.get_event(postgres_pool, event_id)
+
+@mcp.tool()
+async def get_snippet(snippet_id: str) -> Dict[str, Any]:
+    """Get a single snippet by ID."""
+    return await legal_tools.get_snippet(postgres_pool, snippet_id)
+
+@mcp.tool()
+async def list_events(
+    limit: int = 50,
+    offset: int = 0,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    parties_filter: Optional[List[str]] = None,
+    tags_filter: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """List events with optional filtering by date, parties, or tags."""
+    return await legal_tools.list_events(
+        postgres_pool, limit, offset, date_from, date_to, parties_filter, tags_filter
+    )
+
+@mcp.tool()
+async def list_snippets(
+    limit: int = 50,
+    offset: int = 0,
+    case_type: Optional[str] = None,
+    tags_filter: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """List snippets with optional filtering by case type or tags."""
+    return await legal_tools.list_snippets(postgres_pool, limit, offset, case_type, tags_filter)
+
+# UPDATE operations
+@mcp.tool()
+async def update_event(
+    event_id: str,
+    date: Optional[str] = None,
+    description: Optional[str] = None,
+    parties: Optional[List[str]] = None,
+    document_source: Optional[str] = None,
+    excerpts: Optional[str] = None,
+    tags: Optional[List[str]] = None,
+    significance: Optional[str] = None
+) -> Dict[str, Any]:
+    """Update an existing event (only specified fields will be updated)."""
+    return await legal_tools.update_event(
+        postgres_pool, qdrant_client, graphiti_client, openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", "")),
+        event_id, date, description, parties, document_source, excerpts, tags, significance
+    )
+
+@mcp.tool()
+async def update_snippet(
+    snippet_id: str,
+    citation: Optional[str] = None,
+    key_language: Optional[str] = None,
+    tags: Optional[List[str]] = None,
+    context: Optional[str] = None,
+    case_type: Optional[str] = None
+) -> Dict[str, Any]:
+    """Update an existing snippet (only specified fields will be updated)."""
+    return await legal_tools.update_snippet(
+        postgres_pool, qdrant_client, graphiti_client, openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", "")),
+        snippet_id, citation, key_language, tags, context, case_type
+    )
+
+# DELETE operations
+@mcp.tool()
+async def delete_event(event_id: str) -> Dict[str, Any]:
+    """Delete an event from all systems."""
+    return await legal_tools.delete_event(postgres_pool, qdrant_client, event_id)
+
+@mcp.tool()
+async def delete_snippet(snippet_id: str) -> Dict[str, Any]:
+    """Delete a snippet from all systems."""
+    return await legal_tools.delete_snippet(postgres_pool, qdrant_client, snippet_id)
+
+# CourtListener integration tools
+@mcp.tool()
+async def search_courtlistener_opinions(
+    query: str,
+    court: Optional[str] = None,
+    date_after: Optional[str] = None,
+    date_before: Optional[str] = None,
+    cited_gt: Optional[int] = None,
+    limit: int = 20
+) -> Dict[str, Any]:
+    """Search CourtListener for court opinions matching query."""
+    return await courtlistener_tools.search_courtlistener_opinions(
+        query, court, date_after, date_before, cited_gt, limit
+    )
+
+@mcp.tool()
+async def import_courtlistener_opinion(
+    opinion_id: int,
+    add_as_snippet: bool = True,
+    auto_link_events: bool = True
+) -> Dict[str, Any]:
+    """Import a CourtListener opinion into your legal research system."""
+    return await courtlistener_tools.import_courtlistener_opinion(
+        postgres_pool, qdrant_client, graphiti_client, openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", "")),
+        opinion_id, add_as_snippet, auto_link_events
+    )
+
+@mcp.tool()
+async def search_courtlistener_dockets(
+    case_name: Optional[str] = None,
+    docket_number: Optional[str] = None,
+    court: Optional[str] = None,
+    date_filed_after: Optional[str] = None,
+    date_filed_before: Optional[str] = None,
+    limit: int = 20
+) -> Dict[str, Any]:
+    """Search CourtListener dockets (active cases) for procedural history and party information."""
+    return await courtlistener_tools.search_courtlistener_dockets(
+        case_name, docket_number, court, date_filed_after, date_filed_before, limit
+    )
+
+@mcp.tool()
+async def find_citing_opinions(citation: str, limit: int = 20) -> Dict[str, Any]:
+    """Find all opinions that cite a specific case."""
+    return await courtlistener_tools.find_citing_opinions(citation, limit)
+
+@mcp.tool()
+async def analyze_courtlistener_precedents(
+    topic: str,
+    jurisdiction: Optional[str] = None,
+    min_citations: int = 5,
+    date_range_years: int = 30
+) -> Dict[str, Any]:
+    """Analyze precedent evolution on a topic using CourtListener data."""
+    return await courtlistener_tools.analyze_courtlistener_precedents(
+        topic, jurisdiction, min_citations, date_range_years
+    )
+
+# Community Detection operations
+@mcp.tool()
+async def build_legal_communities(group_id: Optional[str] = None) -> Dict[str, Any]:
+    """Build communities in the knowledge graph to identify related legal concepts."""
+    return await legal_tools.build_legal_communities(graphiti_client, group_id)
+
+@mcp.tool()
+async def search_legal_communities(
+    query: str,
+    group_id: Optional[str] = None,
+    limit: int = 10
+) -> Dict[str, Any]:
+    """Search for communities related to a legal query."""
+    return await legal_tools.search_legal_communities(graphiti_client, query, group_id, limit)
+
+@mcp.tool()
+async def enhanced_legal_search(
+    query: str,
+    search_focus: str = "hybrid",
+    group_id: Optional[str] = None,
+    limit: int = 20
+) -> Dict[str, Any]:
+    """Enhanced search using SearchConfig for configurable node/edge/community retrieval."""
+    return await legal_tools.enhanced_legal_search(
+        postgres_pool, qdrant_client, graphiti_client, openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", "")),
+        query, search_focus, group_id, limit
+    )
+
+
+# RESOURCES - Data access points for legal information
+
+@mcp.resource("suechef://system/status")
+async def system_status_resource() -> Dict[str, Any]:
+    """Real-time system status and health information."""
+    return await get_system_status()
+
+@mcp.resource("suechef://analytics/legal")
+async def legal_analytics_resource() -> Dict[str, Any]:
+    """Current legal research analytics and statistics."""
+    return await get_legal_analytics()
+
+@mcp.resource("suechef://events/recent")
+async def recent_events_resource() -> Dict[str, Any]:
+    """Recently added chronology events."""
+    return await list_events(limit=10, offset=0)
+
+@mcp.resource("suechef://snippets/recent")
+async def recent_snippets_resource() -> Dict[str, Any]:
+    """Recently added legal snippets."""
+    return await list_snippets(limit=10, offset=0)
+
+@mcp.resource("suechef://search/trending")
+async def trending_search_resource() -> str:
+    """Information about trending legal search patterns."""
+    return "Recent trending searches: landlord liability, water damage, premises liability, duty to repair"
+
+@mcp.resource("suechef://help/tools")
+def tools_help_resource() -> str:
+    """Complete list of available SueChef tools and their descriptions."""
+    return """
+SueChef Legal Research Tools (26 tools available):
+
+📅 EVENT MANAGEMENT:
+• add_event - Add chronology events with automatic vector/knowledge graph storage
+• get_event - Retrieve single event by ID
+• list_events - List events with date/party/tag filtering
+• update_event - Update existing events (partial updates supported)
+• delete_event - Remove events from all systems
+
+📋 SNIPPET MANAGEMENT:
+• create_snippet - Create legal research snippets (cases, precedents, statutes)
+• get_snippet - Retrieve single snippet by ID
+• list_snippets - List snippets with case type/tag filtering
+• update_snippet - Update existing snippets (partial updates supported)
+• delete_snippet - Remove snippets from all systems
+
+🔍 SEARCH & DISCOVERY:
+• unified_legal_search - Hybrid search across PostgreSQL + Qdrant + Graphiti
+• postgres_full_text_search - Advanced PostgreSQL full-text search
+• postgres_advanced_query - Complex JSONB queries
+• enhanced_legal_search - Configurable node/edge/community search
+
+📄 DOCUMENT PROCESSING:
+• ingest_legal_document - Process full documents for entity extraction
+
+🕐 TEMPORAL INTELLIGENCE:
+• temporal_legal_query - Ask temporal questions about legal knowledge evolution
+
+🔗 RELATIONSHIP MANAGEMENT:
+• create_manual_link - Link events to legal precedents
+
+📊 ANALYTICS & INSIGHTS:
+• get_legal_analytics - Comprehensive legal research analytics
+• get_system_status - Health check for all system components
+
+⚖️ COURTLISTENER INTEGRATION:
+• search_courtlistener_opinions - Search millions of court opinions
+• import_courtlistener_opinion - Import opinions as snippets
+• search_courtlistener_dockets - Find active cases and procedural history
+• find_citing_opinions - Discover cases citing specific precedents
+• analyze_courtlistener_precedents - Analyze precedent evolution
+
+🧠 KNOWLEDGE GRAPH FEATURES:
+• build_legal_communities - Identify legal concept clusters
+• search_legal_communities - Search within community structures
+
+All tools support group-based namespacing for multi-client data isolation.
+"""
+
+
+# PROMPTS - Reusable templates for legal research workflows
+
+@mcp.prompt()
+def legal_case_analysis(case_name: str, jurisdiction: str = "federal") -> str:
+    """Generate a comprehensive legal case analysis prompt."""
+    return f"""
+Analyze the legal case "{case_name}" in {jurisdiction} jurisdiction. Please provide:
+
+1. **Case Summary**: Brief overview of the facts and procedural posture
+2. **Legal Issues**: Key legal questions presented
+3. **Holdings**: Primary legal holdings and rulings
+4. **Precedential Value**: Binding vs. persuasive authority analysis
+5. **Related Cases**: Similar cases and distinguishable precedents
+6. **Practice Implications**: How this case affects legal practice
+
+Use SueChef tools to search for related precedents and analyze the case within the broader legal landscape.
+"""
+
+@mcp.prompt()
+def legal_research_strategy(research_topic: str, client_situation: str = "general inquiry") -> str:
+    """Create a systematic legal research strategy prompt."""
+    return f"""
+Develop a comprehensive legal research strategy for: {research_topic}
+
+**Client Situation**: {client_situation}
+
+**Research Plan**:
+1. **Primary Sources**: Constitutional provisions, statutes, regulations
+2. **Secondary Sources**: Legal encyclopedias, law reviews, practice guides
+3. **Case Law Research**: Binding and persuasive precedents
+4. **Current Developments**: Recent cases, legislative changes
+5. **Jurisdiction Analysis**: Federal vs. state law considerations
+
+**SueChef Research Steps**:
+1. Use `unified_legal_search` to find existing case law and precedents
+2. Use `search_courtlistener_opinions` for comprehensive case discovery
+3. Use `temporal_legal_query` to understand legal evolution over time
+4. Use `build_legal_communities` to identify related legal concepts
+5. Create timeline with `add_event` for key legal developments
+
+Please execute this research plan systematically and provide findings.
+"""
+
+@mcp.prompt()
+def contract_review_checklist(contract_type: str = "general agreement") -> str:
+    """Generate a contract review checklist prompt."""
+    return f"""
+Perform a comprehensive review of this {contract_type} using the following checklist:
+
+**ESSENTIAL ELEMENTS**:
+□ Parties clearly identified with capacity
+□ Consideration adequately described
+□ Terms and conditions clearly stated
+□ Performance obligations specified
+□ Duration and termination provisions
+
+**RISK ANALYSIS**:
+□ Liability and indemnification clauses
+□ Force majeure provisions
+□ Dispute resolution mechanisms
+□ Governing law and jurisdiction
+□ Intellectual property rights
+
+**COMPLIANCE CHECK**:
+□ Applicable statutes and regulations
+□ Industry-specific requirements
+□ Consumer protection laws (if applicable)
+□ Data privacy compliance (GDPR, CCPA, etc.)
+
+**NEGOTIATION POINTS**:
+□ Unfavorable terms for client
+□ Missing protective clauses
+□ Ambiguous language requiring clarification
+□ Standard vs. negotiable provisions
+
+Use SueChef to research relevant case law and regulatory requirements for each provision.
+"""
+
+@mcp.prompt()
+def litigation_timeline_builder(case_name: str, filing_date: str) -> str:
+    """Create a litigation timeline and case management prompt."""
+    return f"""
+Build a comprehensive litigation timeline for {case_name} (filed: {filing_date}):
+
+**CASE SETUP**:
+1. Use `add_event` to create initial filing entry
+2. Research similar cases with `search_courtlistener_dockets`
+3. Identify key precedents with `find_citing_opinions`
+
+**DISCOVERY PHASE**:
+□ Document production deadlines
+□ Deposition schedules
+□ Expert witness disclosures
+□ Motion practice deadlines
+
+**PROCEDURAL MILESTONES**:
+□ Answer/responsive pleading due
+□ Motion to dismiss deadline
+□ Summary judgment motions
+□ Pre-trial conference
+□ Trial date
+
+**RESEARCH TASKS**:
+□ Analyze controlling precedents
+□ Review similar case outcomes
+□ Track recent legal developments
+□ Monitor appeals in related cases
+
+Use SueChef's timeline management to track all deadlines and create automated research updates for case developments.
+"""
+
+@mcp.prompt()
+def regulatory_compliance_audit(industry: str, jurisdiction: str = "federal") -> str:
+    """Generate a regulatory compliance audit prompt."""
+    return f"""
+Conduct a regulatory compliance audit for {industry} sector in {jurisdiction} jurisdiction:
+
+**REGULATORY FRAMEWORK**:
+1. Primary federal regulations and agencies
+2. State-specific requirements
+3. Industry standards and best practices
+4. Recent regulatory changes and proposals
+
+**COMPLIANCE AREAS**:
+□ Licensing and permits
+□ Environmental regulations
+□ Labor and employment law
+□ Consumer protection
+□ Data privacy and security
+□ Financial regulations (if applicable)
+□ Health and safety standards
+
+**RESEARCH METHODOLOGY**:
+1. Use `postgres_advanced_query` to search regulatory databases
+2. Use `temporal_legal_query` to track regulatory evolution
+3. Use `search_courtlistener_opinions` for enforcement cases
+4. Use `analyze_courtlistener_precedents` for compliance trends
+
+**DELIVERABLES**:
+□ Compliance gap analysis
+□ Risk assessment matrix
+□ Recommended action items
+□ Implementation timeline
+□ Ongoing monitoring plan
+
+Provide specific recommendations based on current regulatory landscape and recent enforcement actions.
+"""
+
+@mcp.prompt()
+def precedent_evolution_analysis(legal_doctrine: str, time_period: str = "30 years") -> str:
+    """Analyze how a legal doctrine has evolved over time."""
+    return f"""
+Analyze the evolution of {legal_doctrine} over the past {time_period}:
+
+**HISTORICAL DEVELOPMENT**:
+1. Foundational cases and original doctrine
+2. Key evolutionary moments and turning points
+3. Current state of the law
+4. Emerging trends and future direction
+
+**RESEARCH APPROACH**:
+1. Use `analyze_courtlistener_precedents` for comprehensive case analysis
+2. Use `temporal_legal_query` for timeline-based insights
+3. Use `enhanced_legal_search` with communities focus for related concepts
+4. Use `build_legal_communities` to map doctrinal relationships
+
+**ANALYSIS FRAMEWORK**:
+□ Circuit splits and conflicting interpretations
+□ Supreme Court guidance and clarity
+□ Scholarly commentary and criticism
+□ Practical implications for practitioners
+□ Prediction of future developments
+
+**JURISDICTION COMPARISON**:
+□ Federal court trends
+□ State court variations
+□ International perspectives (if relevant)
+□ Model code and uniform law influences
+
+Provide comprehensive analysis with supporting case citations and practical implications for current legal practice.
+"""
 
 
 async def initialize_clients():
@@ -542,9 +597,13 @@ async def initialize_clients():
     
     # Initialize Graphiti
     graphiti_client = Graphiti(
-        neo4j_driver=neo4j_driver,
-        openai_api_key=os.getenv("OPENAI_API_KEY", "")
+        uri=os.getenv("NEO4J_URI", "bolt://localhost:7687"),
+        user=os.getenv("NEO4J_USER", "neo4j"),
+        password=os.getenv("NEO4J_PASSWORD", "password")
     )
+    
+    # CRITICAL: Build indices and constraints after initialization
+    await graphiti_client.build_indices_and_constraints()
 
 
 async def initialize_databases():
@@ -570,7 +629,6 @@ async def initialize_databases():
             pass
 
 
-@mcp.server.startup()
 async def startup():
     """Initialize everything on server startup."""
     await initialize_clients()
@@ -578,5 +636,22 @@ async def startup():
 
 
 if __name__ == "__main__":
-    # Run the MCP server
-    mcp.run()
+    # Run the MCP server with Streaming HTTP transport
+    import os
+    
+    host = os.getenv("MCP_HOST", "0.0.0.0")  # Bind to all interfaces in container
+    port = int(os.getenv("MCP_PORT", "8000"))
+    path = os.getenv("MCP_PATH", "/mcp")
+    log_level = os.getenv("MCP_LOG_LEVEL", "info")
+    
+    print(f"🍳 Starting SueChef MCP Server on http://{host}:{port}{path}")
+    print(f"📚 Legal research tools available: 26 total tools")
+    
+    # FastMCP will handle async initialization internally
+    mcp.run(
+        transport="streamable-http",
+        host=host,
+        port=port,
+        path=path,
+        log_level=log_level
+    )

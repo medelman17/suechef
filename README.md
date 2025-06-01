@@ -79,11 +79,8 @@ cp .env.example .env
 
 ### 2. Start Services
 ```bash
-# Start just the databases (recommended for development)
+# Start everything including SueChef MCP server with Streaming HTTP
 docker-compose up -d
-
-# Or start everything including SueChef MCP server
-docker-compose --profile full up -d
 ```
 
 ### 3. Initialize Database
@@ -93,10 +90,10 @@ uv run python setup.py
 ```
 
 ### 4. Access Services
+- **SueChef MCP Server**: `http://localhost:8000/mcp` (Streaming HTTP endpoint)
 - **PostgreSQL**: `localhost:5432` (user: postgres, password: suechef_password)
 - **Qdrant**: `http://localhost:6333` (dashboard at `/dashboard`)
 - **Neo4j**: `http://localhost:7474` (user: neo4j, password: suechef_neo4j_password)
-- **SueChef MCP**: `localhost:8000` (if using --profile full)
 
 ### 5. Stop Services
 ```bash
@@ -146,7 +143,38 @@ uv run python setup.py
 
 ## Usage
 
-### Running the MCP Server
+### Accessing SueChef via Streaming HTTP
+
+SueChef runs as an HTTP server that implements the MCP (Model Context Protocol) over streaming HTTP. You can connect to it from any MCP-compatible client:
+
+**Endpoint**: `http://localhost:8000/mcp`
+
+#### Example Client Connection (Python)
+```python
+from mcp import Client
+
+async with Client("http://localhost:8000/mcp") as client:
+    # List available tools
+    tools = await client.list_tools()
+    print(f"Available tools: {len(tools.tools)}")
+    
+    # Call a tool
+    result = await client.call_tool("get_system_status", {})
+    print(result)
+```
+
+#### Direct HTTP Testing
+```bash
+# Test server health
+curl http://localhost:8000/mcp
+
+# Send MCP request (example)
+curl -X POST http://localhost:8000/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"method": "tools/list", "params": {}}'
+```
+
+### Running Locally (Development)
 
 ```bash
 uv run python main.py

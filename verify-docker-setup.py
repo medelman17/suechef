@@ -36,7 +36,8 @@ async def verify_services() -> Dict[str, Any]:
         "postgresql": {"status": "unknown", "details": ""},
         "qdrant": {"status": "unknown", "details": ""},
         "neo4j": {"status": "unknown", "details": ""},
-        "summary": {"total": 3, "healthy": 0, "issues": []}
+        "suechef_mcp": {"status": "unknown", "details": ""},
+        "summary": {"total": 4, "healthy": 0, "issues": []}
     }
     
     # Test Qdrant
@@ -102,6 +103,27 @@ async def verify_services() -> Dict[str, Any]:
     else:
         results["neo4j"]["status"] = "skipped"
         results["neo4j"]["details"] = "neo4j driver not available for testing"
+    
+    # Test SueChef MCP Streaming HTTP
+    if AIOHTTP_AVAILABLE:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get("http://localhost:8000/mcp") as resp:
+                    if resp.status == 200:
+                        results["suechef_mcp"]["status"] = "healthy"
+                        results["suechef_mcp"]["details"] = "SueChef MCP Streaming HTTP endpoint is responding"
+                        results["summary"]["healthy"] += 1
+                    else:
+                        results["suechef_mcp"]["status"] = "unhealthy"
+                        results["suechef_mcp"]["details"] = f"HTTP {resp.status}"
+                        results["summary"]["issues"].append("SueChef MCP endpoint not responding properly")
+        except Exception as e:
+            results["suechef_mcp"]["status"] = "error"
+            results["suechef_mcp"]["details"] = str(e)
+            results["summary"]["issues"].append(f"SueChef MCP connection error: {e}")
+    else:
+        results["suechef_mcp"]["status"] = "skipped"
+        results["suechef_mcp"]["details"] = "aiohttp not available for testing"
     
     return results
 
