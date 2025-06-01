@@ -82,6 +82,17 @@ SueChef is a Model Context Protocol (MCP) server project using FastMCP for legal
 - Use search recipes from `graphiti_core.search.search_config_recipes`
 - Pass `group_ids` as list: `[group_id]` not single string
 
+### Code Organization & Modularization
+- **IMPORTANT**: See `MODULARIZATION_PROPOSAL.md` for comprehensive restructuring plan
+- **PHASE 1 COMPLETE**: See `MODULARIZATION_COMPLETED.md` for implementation results
+- ✅ **Foundation built**: Modular directory structure with 8-layer architecture  
+- ✅ **Configuration centralized**: Type-safe config management with validation
+- ✅ **Database layer extracted**: Managed lifecycle with proper abstractions
+- ✅ **Service layer started**: EventService fully migrated with clean interfaces
+- ✅ **Demonstration ready**: `main_modular.py` shows mixed architecture pattern
+- 🔄 **Migration ongoing**: 23 tools still using legacy architecture
+- Plugin architecture and auto-discovery ready for Phase 2-4 implementation
+
 ### Available Tools
 
 **Event Management:**
