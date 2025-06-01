@@ -141,6 +141,20 @@ docker compose restart suechef
 
 **→ See [DATABASE_MIGRATION_FIX.md](DATABASE_MIGRATION_FIX.md) for detailed resolution steps**
 
+### Chronology System Issues
+If you encounter array parameter or connection errors:
+
+**Error**: `Input should be a valid list [type=list_type]` or `Connection error.`
+
+**Quick Fix**:
+```bash
+# Update to latest version with enhanced parameter parsing
+git pull origin main
+docker compose restart suechef
+```
+
+**→ See [CHRONOLOGY_FIXES.md](CHRONOLOGY_FIXES.md) for detailed resolution steps**
+
 ## Installation
 
 ### Option 1: Docker (Recommended)

@@ -41,22 +41,96 @@ async def ensure_initialized():
 # Tool definitions using @mcp.tool() decorator
 
 @mcp.tool()
+async def test_array_parameters(
+    test_parties: Optional[Any] = None,
+    test_tags: Optional[Any] = None
+) -> Dict[str, Any]:
+    """Test tool for diagnosing array parameter parsing issues."""
+    from src.utils.parameter_parsing import parse_string_list
+    
+    try:
+        parties_result = parse_string_list(test_parties)
+        tags_result = parse_string_list(test_tags)
+        
+        return {
+            "status": "success",
+            "results": {
+                "parties": {
+                    "input": test_parties,
+                    "input_type": str(type(test_parties)),
+                    "parsed": parties_result,
+                    "parsed_type": str(type(parties_result))
+                },
+                "tags": {
+                    "input": test_tags,
+                    "input_type": str(type(test_tags)),
+                    "parsed": tags_result,
+                    "parsed_type": str(type(tags_result))
+                }
+            },
+            "message": "Array parameter parsing test completed successfully"
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Array parsing test failed: {str(e)}",
+            "debug_info": {
+                "test_parties": str(test_parties),
+                "test_tags": str(test_tags)
+            }
+        }
+
+@mcp.tool()
 async def add_event(
     date: str,
     description: str,
-    parties: Optional[List[str]] = None,
+    parties: Optional[Any] = None,  # Accept Any type for flexible parsing
     document_source: Optional[str] = None,
     excerpts: Optional[str] = None,
-    tags: Optional[List[str]] = None,
+    tags: Optional[Any] = None,     # Accept Any type for flexible parsing
     significance: Optional[str] = None,
     group_id: str = "default"
 ) -> Dict[str, Any]:
-    """Add chronology events with automatic vector and knowledge graph storage."""
+    """Add chronology events with automatic vector and knowledge graph storage (ROBUST VERSION)."""
     await ensure_initialized()
-    return await legal_tools.add_event(
-        postgres_pool, qdrant_client, graphiti_client, openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", "")),
-        date, description, parties, document_source, excerpts, tags, significance, group_id
-    )
+    
+    # Import parameter parsing utilities
+    from src.utils.parameter_parsing import normalize_event_parameters
+    
+    try:
+        # Normalize parameters to handle different input formats
+        params = normalize_event_parameters(
+            date=date,
+            description=description,
+            parties=parties,
+            document_source=document_source,
+            excerpts=excerpts,
+            tags=tags,
+            significance=significance,
+            group_id=group_id
+        )
+        
+        # Call the original function with normalized parameters
+        return await legal_tools.add_event(
+            postgres_pool, qdrant_client, graphiti_client, 
+            openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", "")),
+            params["date"], params["description"], params["parties"], 
+            params["document_source"], params["excerpts"], params["tags"], 
+            params["significance"], params["group_id"]
+        )
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Parameter parsing or execution error: {str(e)}",
+            "error_type": "parameter_parsing_error",
+            "debug_info": {
+                "received_parties": str(parties),
+                "received_tags": str(tags),
+                "parties_type": str(type(parties)),
+                "tags_type": str(type(tags))
+            }
+        }
 
 @mcp.tool()
 async def create_snippet(
@@ -576,34 +650,63 @@ Provide comprehensive analysis with supporting case citations and practical impl
 
 
 async def initialize_clients():
-    """Initialize all database and service clients."""
+    """Initialize all database and service clients with enhanced connection management."""
     global postgres_pool, qdrant_client, graphiti_client, neo4j_driver
     
-    # Initialize PostgreSQL
-    postgres_pool = await asyncpg.create_pool(
-        os.getenv("POSTGRES_URL", "postgresql://localhost/legal_research")
-    )
-    
-    # Initialize Qdrant
-    qdrant_client = QdrantClient(
-        url=os.getenv("QDRANT_URL", "http://localhost:6333")
-    )
-    
-    # Initialize Neo4j
-    neo4j_driver = neo4j.GraphDatabase.driver(
-        os.getenv("NEO4J_URI", "bolt://localhost:7687"),
-        auth=(os.getenv("NEO4J_USER", "neo4j"), os.getenv("NEO4J_PASSWORD", "password"))
-    )
-    
-    # Initialize Graphiti
-    graphiti_client = Graphiti(
-        uri=os.getenv("NEO4J_URI", "bolt://localhost:7687"),
-        user=os.getenv("NEO4J_USER", "neo4j"),
-        password=os.getenv("NEO4J_PASSWORD", "password")
-    )
-    
-    # CRITICAL: Build indices and constraints after initialization
-    await graphiti_client.build_indices_and_constraints()
+    try:
+        # Initialize PostgreSQL with connection pool settings
+        postgres_pool = await asyncpg.create_pool(
+            os.getenv("POSTGRES_URL", "postgresql://localhost/legal_research"),
+            min_size=2,           # Minimum connections
+            max_size=10,          # Maximum connections  
+            max_queries=50000,    # Max queries per connection
+            max_inactive_connection_lifetime=300,  # 5 minutes
+            command_timeout=30    # 30 second timeout
+        )
+        
+        # Test PostgreSQL connection
+        async with postgres_pool.acquire() as conn:
+            await conn.fetchval("SELECT 1")
+        print("✅ PostgreSQL connection established")
+        
+        # Initialize Qdrant
+        qdrant_client = QdrantClient(
+            url=os.getenv("QDRANT_URL", "http://localhost:6333")
+        )
+        # Test Qdrant connection
+        qdrant_client.get_collections()
+        print("✅ Qdrant connection established")
+        
+        # Initialize Neo4j with connection pool settings
+        neo4j_driver = neo4j.GraphDatabase.driver(
+            os.getenv("NEO4J_URI", "bolt://localhost:7687"),
+            auth=(os.getenv("NEO4J_USER", "neo4j"), os.getenv("NEO4J_PASSWORD", "password")),
+            max_connection_lifetime=30 * 60,  # 30 minutes
+            max_connection_pool_size=50,
+            connection_acquisition_timeout=30  # 30 seconds
+        )
+        
+        # Test Neo4j connection
+        with neo4j_driver.session() as session:
+            session.run("RETURN 1")
+        print("✅ Neo4j connection established")
+        
+        # Initialize Graphiti
+        graphiti_client = Graphiti(
+            uri=os.getenv("NEO4J_URI", "bolt://localhost:7687"),
+            user=os.getenv("NEO4J_USER", "neo4j"),
+            password=os.getenv("NEO4J_PASSWORD", "password")
+        )
+        
+        # CRITICAL: Build indices and constraints after initialization
+        await graphiti_client.build_indices_and_constraints()
+        print("✅ Graphiti initialized with indices and constraints")
+        
+        print("🎉 All database connections initialized successfully")
+        
+    except Exception as e:
+        print(f"❌ Database initialization failed: {e}")
+        raise
 
 
 async def initialize_databases():
