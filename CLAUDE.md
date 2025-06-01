@@ -34,6 +34,8 @@ uv sync
 uv run python main.py
 ```
 
+**Note**: `main.py` now uses the **modular architecture** by default, providing improved performance, maintainability, and type safety. The legacy monolithic version is preserved as `main_legacy.py` for reference.
+
 ### Run setup (initialize databases)
 ```bash
 uv run python setup.py
@@ -51,8 +53,14 @@ uv remove <package-name>
 
 ## Project Structure
 
-- `main.py` - FastMCP server implementation with tool routing
-- `legal_tools.py` - Implementation of all legal research tools
+- `main.py` - **Modular FastMCP server** with layered architecture (primary)
+- `main_legacy.py` - Legacy monolithic implementation (reference only)
+- `src/` - **New modular architecture components**
+  - `config/` - Centralized configuration management
+  - `core/database/` - Database connection managers and initialization
+  - `services/legal/` - Business logic services (EventService, SnippetService)
+  - `utils/` - Shared utilities (embeddings, etc.)
+- `legal_tools.py` - Legacy tool implementations (being migrated)
 - `legal_entity_types.py` - Custom Pydantic models for legal domain entities
 - `database_schema.py` - PostgreSQL schema and Qdrant collection definitions
 - `setup.py` - Database initialization script
@@ -83,15 +91,15 @@ SueChef is a Model Context Protocol (MCP) server project using FastMCP for legal
 - Pass `group_ids` as list: `[group_id]` not single string
 
 ### Code Organization & Modularization
-- **IMPORTANT**: See `MODULARIZATION_PROPOSAL.md` for comprehensive restructuring plan
-- **PHASE 1 COMPLETE**: See `MODULARIZATION_COMPLETED.md` for implementation results
+- **IMPORTANT**: See `docs/MODULARIZATION_COMPLETED.md` for comprehensive architecture details
+- ✅ **MIGRATION COMPLETE**: Modular architecture is now the primary implementation
 - ✅ **Foundation built**: Modular directory structure with 8-layer architecture  
 - ✅ **Configuration centralized**: Type-safe config management with validation
 - ✅ **Database layer extracted**: Managed lifecycle with proper abstractions
-- ✅ **Service layer started**: EventService fully migrated with clean interfaces
-- ✅ **Demonstration ready**: `main_modular.py` shows mixed architecture pattern
-- 🔄 **Migration ongoing**: 23 tools still using legacy architecture
-- Plugin architecture and auto-discovery ready for Phase 2-4 implementation
+- ✅ **Service layer active**: EventService + SnippetService fully migrated (8 tools)
+- ✅ **Production ready**: `main.py` uses modular architecture with legacy fallback
+- 🔄 **Migration ongoing**: 18 tools still using legacy architecture (transitioning)
+- Plugin architecture and auto-discovery ready for continued expansion
 
 ### Available Tools
 

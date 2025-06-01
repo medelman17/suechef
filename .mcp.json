@@ -1,0 +1,21 @@
+{
+    "mcpServers": {
+        "linear": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "mcp-remote",
+                "https://mcp.linear.app/sse"
+            ]
+        },
+        "suechef": {
+            "command": "uvx",
+            "args": [
+                "mcp-proxy",
+                "http://localhost:8000/mcp",
+                "--transport=streamablehttp"
+            ],
+            "env": {}
+        }
+    }
+}

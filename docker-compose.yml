@@ -71,7 +71,7 @@ services:
     networks:
       - suechef-network
 
-  # SueChef MCP Server with Streaming HTTP (Original)
+  # SueChef MCP Server - Modular Architecture (Primary)
   suechef:
     build:
       context: .
@@ -115,51 +115,6 @@ services:
     networks:
       - suechef-network
 
-  # SueChef MCP Server - Modular Architecture (Demo)
-  suechef-modular:
-    build:
-      context: .
-      dockerfile: Dockerfile.modular
-    container_name: suechef-mcp-modular
-    environment:
-      # Database connections
-      POSTGRES_URL: postgresql://postgres:suechef_password@postgres:5432/legal_research
-      QDRANT_URL: http://qdrant:6333
-      NEO4J_URI: bolt://neo4j:7687
-      NEO4J_USER: neo4j
-      NEO4J_PASSWORD: suechef_neo4j_password
-      # API keys
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      COURTLISTENER_API_KEY: ${COURTLISTENER_API_KEY}
-      # MCP Server configuration
-      MCP_HOST: 0.0.0.0
-      MCP_PORT: 8001
-      MCP_PATH: /mcp
-      MCP_LOG_LEVEL: info
-    depends_on:
-      postgres:
-        condition: service_healthy
-      qdrant:
-        condition: service_healthy
-      neo4j:
-        condition: service_healthy
-    ports:
-      - "8001:8001"
-    volumes:
-      - .:/app
-      - suechef_modular_venv:/app/.venv
-    working_dir: /app
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/mcp"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    networks:
-      - suechef-network
-    profiles:
-      - modular
-
 volumes:
   postgres_data:
     driver: local
@@ -174,8 +129,6 @@ volumes:
   neo4j_plugins:
     driver: local
   suechef_venv:
-    driver: local
-  suechef_modular_venv:
     driver: local
 
 networks:
