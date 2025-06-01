@@ -23,10 +23,10 @@ from src.core.database.manager import DatabaseManager
 from src.core.database.initializer import initialize_databases
 from src.services.legal.event_service import EventService
 from src.services.legal.snippet_service import SnippetService
+from src.services.external.courtlistener_service import CourtListenerService
 
 # Import legacy tools for features not yet migrated
 import legal_tools
-import courtlistener_tools
 import openai
 
 
@@ -38,25 +38,15 @@ config = None
 db_manager = None
 event_service = None
 snippet_service = None
+courtlistener_service = None
 
 
 async def ensure_initialized():
     """Ensure all components are initialized."""
-    global config, db_manager, event_service, snippet_service
+    global config, db_manager, event_service, snippet_service, courtlistener_service
     
     if config is None:
-        config = get_config()
-        
-        # Initialize database manager
-        db_manager = DatabaseManager(config.database)
-        await db_manager.initialize()
-        
-        # Initialize database schemas
-        await initialize_databases(db_manager)
-        
-        # Initialize services
-        event_service = EventService(db_manager)
-        snippet_service = SnippetService(db_manager)
+        raise RuntimeError("Services not initialized. This should not happen.")
 
 
 # =============================================================================
@@ -205,6 +195,110 @@ async def delete_snippet(snippet_id: str) -> Dict[str, Any]:
     return await snippet_service.delete_snippet(snippet_id)
 
 
+# COURTLISTENER INTEGRATION TOOLS (MODULAR VERSION)
+
+@mcp.tool()
+async def test_courtlistener_connection() -> Dict[str, Any]:
+    """Test CourtListener API connection and authentication (MODULAR VERSION)."""
+    await ensure_initialized()
+    if courtlistener_service is None:
+        return {"status": "error", "message": "CourtListener service not initialized"}
+    return await courtlistener_service.test_connection()
+
+
+@mcp.tool()
+async def search_courtlistener_opinions(
+    query: str,
+    court: Optional[str] = None,
+    date_after: Optional[str] = None,
+    date_before: Optional[str] = None,
+    cited_gt: Optional[int] = None,
+    limit: int = 20
+) -> Dict[str, Any]:
+    """Search CourtListener for court opinions matching query (MODULAR VERSION)."""
+    await ensure_initialized()
+    return await courtlistener_service.search_opinions(
+        query=query,
+        court=court,
+        date_after=date_after,
+        date_before=date_before,
+        cited_gt=cited_gt,
+        limit=limit
+    )
+
+
+@mcp.tool()
+async def import_courtlistener_opinion(
+    opinion_id: int,
+    add_as_snippet: bool = True,
+    auto_link_events: bool = True,
+    group_id: str = "default"
+) -> Dict[str, Any]:
+    """Import a CourtListener opinion into your legal research system (MODULAR VERSION)."""
+    await ensure_initialized()
+    return await courtlistener_service.import_opinion(
+        postgres_pool=db_manager.postgres,
+        qdrant_client=db_manager.qdrant,
+        graphiti_client=db_manager.graphiti,
+        openai_client=openai.AsyncOpenAI(api_key=config.api.openai_api_key),
+        opinion_id=opinion_id,
+        add_as_snippet=add_as_snippet,
+        auto_link_events=auto_link_events,
+        group_id=group_id
+    )
+
+
+@mcp.tool()
+async def search_courtlistener_dockets(
+    case_name: Optional[str] = None,
+    docket_number: Optional[str] = None,
+    court: Optional[str] = None,
+    date_filed_after: Optional[str] = None,
+    date_filed_before: Optional[str] = None,
+    limit: int = 20
+) -> Dict[str, Any]:
+    """Search CourtListener dockets (active cases) (MODULAR VERSION)."""
+    await ensure_initialized()
+    return await courtlistener_service.search_dockets(
+        case_name=case_name,
+        docket_number=docket_number,
+        court=court,
+        date_filed_after=date_filed_after,
+        date_filed_before=date_filed_before,
+        limit=limit
+    )
+
+
+@mcp.tool()
+async def find_citing_opinions(
+    citation: str,
+    limit: int = 20
+) -> Dict[str, Any]:
+    """Find all opinions that cite a specific case (MODULAR VERSION)."""
+    await ensure_initialized()
+    return await courtlistener_service.find_citing_opinions(
+        citation=citation,
+        limit=limit
+    )
+
+
+@mcp.tool()
+async def analyze_courtlistener_precedents(
+    topic: str,
+    jurisdiction: Optional[str] = None,
+    min_citations: int = 5,
+    date_range_years: int = 30
+) -> Dict[str, Any]:
+    """Analyze precedent evolution on a topic using CourtListener data (MODULAR VERSION)."""
+    await ensure_initialized()
+    return await courtlistener_service.analyze_precedents(
+        topic=topic,
+        jurisdiction=jurisdiction,
+        min_citations=min_citations,
+        date_range_years=date_range_years
+    )
+
+
 # =============================================================================
 # LEGACY TOOLS (still using old architecture)
 # =============================================================================
@@ -279,18 +373,48 @@ SueChef Modular Architecture:
 # SERVER STARTUP
 # =============================================================================
 
+async def initialize_services():
+    """Initialize all services at startup"""
+    global config, db_manager, event_service, snippet_service, courtlistener_service
+    
+    try:
+        config = get_config()
+        print(f"✅ Configuration loaded (Environment: {config.environment})")
+        
+        # Initialize database manager
+        print("🔄 Initializing database connections...")
+        db_manager = DatabaseManager(config.database)
+        await db_manager.initialize()
+        
+        # Initialize database schemas
+        await initialize_databases(db_manager)
+        
+        # Initialize services
+        print("🔄 Initializing services...")
+        event_service = EventService(db_manager)
+        snippet_service = SnippetService(db_manager)
+        courtlistener_service = CourtListenerService(config)
+        
+        print(f"✅ All services initialized successfully")
+        print(f"   - EventService: {event_service is not None}")
+        print(f"   - SnippetService: {snippet_service is not None}")
+        print(f"   - CourtListenerService: {courtlistener_service is not None}")
+        
+    except Exception as e:
+        print(f"❌ Service initialization error: {e}")
+        import traceback
+        traceback.print_exc()
+        exit(1)
+
+
 if __name__ == "__main__":
     print("🍳 Starting SueChef MCP Server (Modular Architecture)")
     print("📚 Using new layered architecture with EventService + SnippetService")
     print("🔄 Mixed mode: 8 tools migrated, 18 legacy tools transitioning")
     
-    # Get configuration
-    try:
-        config = get_config()
-        print(f"✅ Configuration loaded (Environment: {config.environment})")
-    except Exception as e:
-        print(f"❌ Configuration error: {e}")
-        exit(1)
+    # Initialize services synchronously at startup
+    import asyncio
+    asyncio.run(initialize_services())
     
     # Start server
     mcp.run(

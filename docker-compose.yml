@@ -107,7 +107,7 @@ services:
     working_dir: /app
     command: ["uv", "run", "python", "main.py"]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/mcp"]
+      test: ["CMD", "curl", "-f", "-L", "http://localhost:8000/mcp/"]
       interval: 30s
       timeout: 10s
       retries: 3
