@@ -1,7 +1,7 @@
 [project]
-name = "unified-legal-mcp"
+name = "suechef"
 version = "0.1.0"
-description = "Add your description here"
+description = "SueChef - Your AI sous chef for cooking up winning legal strategies 👨‍🍳⚖️"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

@@ -22,7 +22,7 @@ import legal_tools
 import courtlistener_tools
 
 # Initialize FastMCP server
-mcp = FastMCP("unified-legal-mcp")
+mcp = FastMCP("suechef")
 
 # Global clients (will be initialized on startup)
 postgres_pool = None

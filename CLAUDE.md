@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a unified-legal-mcp project built with Python 3.12+ and FastMCP framework. It provides a comprehensive legal research system combining PostgreSQL, Qdrant vector database, and Graphiti knowledge graphs for intelligent legal data management and analysis.
+SueChef is a legal research MCP (Model Context Protocol) built with Python 3.12+ and FastMCP framework. The name is a play on "sous chef" - it's your AI assistant for cooking up winning legal strategies! 👨‍🍳⚖️
+
+SueChef provides a comprehensive legal research system combining PostgreSQL, Qdrant vector database, and Graphiti knowledge graphs for intelligent legal data management and analysis.
 
 ## Development Environment
 
@@ -58,7 +60,7 @@ uv remove <package-name>
 
 ## Development Notes
 
-This is a Model Context Protocol (MCP) server project using FastMCP for legal research. When developing:
+SueChef is a Model Context Protocol (MCP) server project using FastMCP for legal research. When developing:
 - FastMCP is used for building MCP servers that can integrate with AI assistants
 - The project is configured for Python 3.12 or higher
 - Use `uv` for all package management operations to maintain consistency

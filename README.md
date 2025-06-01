@@ -1,6 +1,17 @@
-# Unified Legal MCP (Model Context Protocol)
+```
+   _____ _   _ ______ _____ _    _ ______ ______
+  / ____| | | |  ____/ ____| |  | |  ____|  ____|
+ | (___ | | | | |__ | |    | |__| | |__  | |__
+  \___ \| | | |  __|| |    |  __  |  __| |  __|
+  ____) | |_| | |___| |____| |  | | |____| |
+ |_____/ \___/|______\_____|_|  |_|______|_|     👨‍🍳⚖️
+```
 
-A powerful legal research system that combines PostgreSQL, Qdrant vector database, and Graphiti knowledge graphs to provide comprehensive legal intelligence and research capabilities.
+# SueChef - Legal Research MCP
+
+*Your AI sous chef for cooking up winning legal strategies*
+
+SueChef is a powerful legal research MCP (Model Context Protocol) that combines PostgreSQL, Qdrant vector database, and Graphiti knowledge graphs to help you prepare the perfect legal case - with all the right ingredients!
 
 ## Features
 
@@ -54,8 +65,8 @@ A powerful legal research system that combines PostgreSQL, Qdrant vector databas
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/medelman17/unified-legal-mcp.git
-cd unified-legal-mcp
+git clone https://github.com/medelman17/suechef.git
+cd suechef
 ```
 
 2. Install dependencies using uv:
@@ -170,13 +181,13 @@ dockets = search_courtlistener_dockets(
 )
 ```
 
-## Architecture
+## Architecture - The SueChef Kitchen 🍳
 
-The system uses three complementary technologies:
+SueChef's kitchen uses three complementary technologies to serve up legal insights:
 
-1. **PostgreSQL**: Structured data storage with JSONB support for flexible schemas and full-text search capabilities
-2. **Qdrant**: Vector database for semantic search using OpenAI embeddings
-3. **Graphiti + Neo4j**: Knowledge graph for entity extraction and relationship mapping
+1. **PostgreSQL** (The Pantry): Structured data storage with JSONB support for flexible schemas and full-text search capabilities
+2. **Qdrant** (The Spice Rack): Vector database for semantic search using OpenAI embeddings - finding the perfect flavor matches
+3. **Graphiti + Neo4j** (The Recipe Book): Knowledge graph for entity extraction and relationship mapping - understanding how ingredients work together
 
 ## Development
 
