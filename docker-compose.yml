@@ -23,7 +23,7 @@ services:
 
   # Qdrant vector database
   qdrant:
-    image: qdrant/qdrant:v1.7.4
+    image: qdrant/qdrant:v1.14.1
     container_name: suechef-qdrant
     ports:
       - "6333:6333"
