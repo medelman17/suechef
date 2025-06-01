@@ -256,30 +256,35 @@ async def unified_legal_search(
                 group_ids=[group_id] if group_id else None
             )
             
-            # Handle different result types safely
+            # Handle Graphiti EntityEdge results
             graph_results = []
-            for r in kg_results:
+            for i, r in enumerate(kg_results):
                 result_item = {
-                    "id": getattr(r, 'id', ''),
-                    "score": getattr(r, 'score', 0.0)
+                    "id": str(r.uuid) if hasattr(r, 'uuid') else '',
+                    "score": 1.0 / (i + 1),  # Simple relevance: order-based scoring
+                    "type": "relationship"
                 }
                 
-                # Handle different object types
-                if hasattr(r, 'content'):
-                    result_item["content"] = r.content
-                    result_item["type"] = "episode"
-                elif hasattr(r, 'name'):
-                    result_item["content"] = getattr(r, 'name', '')
-                    result_item["type"] = "node"
-                elif hasattr(r, 'relation_type'):
-                    result_item["content"] = f"Relationship: {getattr(r, 'relation_type', '')}"
-                    result_item["type"] = "edge"
+                # Extract relationship information
+                if hasattr(r, 'name') and r.name:
+                    result_item["content"] = r.name
+                    result_item["relationship_type"] = r.name
+                elif hasattr(r, 'fact') and r.fact:
+                    result_item["content"] = r.fact
+                    result_item["relationship_type"] = "fact"
                 else:
-                    result_item["content"] = str(r)
-                    result_item["type"] = "unknown"
+                    result_item["content"] = f"EntityEdge {str(r.uuid)[:8]}"
                 
-                if hasattr(r, 'source'):
-                    result_item["source"] = r.source
+                # Add additional relationship context
+                if hasattr(r, 'source_node_uuid') and hasattr(r, 'target_node_uuid'):
+                    result_item["source_node"] = str(r.source_node_uuid)
+                    result_item["target_node"] = str(r.target_node_uuid)
+                
+                if hasattr(r, 'group_id'):
+                    result_item["group_id"] = r.group_id
+                
+                if hasattr(r, 'created_at'):
+                    result_item["created_at"] = str(r.created_at)
                 
                 graph_results.append(result_item)
             
