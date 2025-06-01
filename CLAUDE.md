@@ -96,6 +96,13 @@ This is a Model Context Protocol (MCP) server project using FastMCP for legal re
 17. **get_legal_analytics** - Comprehensive analytics
 18. **get_system_status** - Health check
 
+**CourtListener Integration:**
+19. **search_courtlistener_opinions** - Search court opinions
+20. **import_courtlistener_opinion** - Import opinions as snippets
+21. **search_courtlistener_dockets** - Search active cases
+22. **find_citing_opinions** - Find cases citing a precedent
+23. **analyze_courtlistener_precedents** - Analyze precedent evolution
+
 ## Dependency Management Guidelines
 - Use `uv` to manage python dependencies, builds, etc. 
 - Do not manually edit project config or dependency files

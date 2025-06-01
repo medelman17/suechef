@@ -34,6 +34,13 @@ A powerful legal research system that combines PostgreSQL, Qdrant vector databas
 - **get_legal_analytics**: Comprehensive legal research analytics
 - **get_system_status**: Health check for all system components
 
+### ⚖️ CourtListener Integration
+- **search_courtlistener_opinions**: Search millions of court opinions by query, court, date, and citation count
+- **import_courtlistener_opinion**: Import opinions as snippets with automatic event linking
+- **search_courtlistener_dockets**: Find active cases, parties, and procedural history
+- **find_citing_opinions**: Discover all cases that cite a specific precedent
+- **analyze_courtlistener_precedents**: Analyze how legal precedents evolved over decades
+
 ## Prerequisites
 
 - Python 3.12+
@@ -41,6 +48,7 @@ A powerful legal research system that combines PostgreSQL, Qdrant vector databas
 - Qdrant vector database
 - Neo4j graph database
 - OpenAI API key (for embeddings)
+- CourtListener API key (optional, for enhanced access)
 
 ## Installation
 
@@ -63,6 +71,7 @@ export NEO4J_URI="bolt://localhost:7687"
 export NEO4J_USER="neo4j"
 export NEO4J_PASSWORD="your-password"
 export OPENAI_API_KEY="your-openai-api-key"
+export COURTLISTENER_API_KEY="your-courtlistener-api-key"  # Optional
 ```
 
 4. Run the setup script:
@@ -122,6 +131,43 @@ temporal_legal_query(
 
 # 6. Get analytics
 get_legal_analytics()
+```
+
+### CourtListener Integration Example
+
+```python
+# 1. Search for relevant precedents
+opinions = search_courtlistener_opinions(
+    query="landlord liability water damage notice",
+    court="ca9",  # Ninth Circuit
+    cited_gt=10,  # Well-cited cases
+    date_after="2000-01-01"
+)
+
+# 2. Import a key precedent
+import_courtlistener_opinion(
+    opinion_id=12345,
+    add_as_snippet=True,
+    auto_link_events=True
+)
+
+# 3. Find cases that cite your precedent
+citing_cases = find_citing_opinions(
+    citation="Johnson v. Property Mgmt Co., 123 F.3d 456"
+)
+
+# 4. Analyze precedent evolution
+analysis = analyze_courtlistener_precedents(
+    topic="landlord liability water damage",
+    jurisdiction="ca9",
+    date_range_years=30
+)
+
+# 5. Search active litigation
+dockets = search_courtlistener_dockets(
+    case_name="tenant water damage",
+    date_filed_after="2020-01-01"
+)
 ```
 
 ## Architecture

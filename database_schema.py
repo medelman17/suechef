@@ -79,6 +79,31 @@ CREATE TRIGGER update_events_updated_at BEFORE UPDATE
 
 CREATE TRIGGER update_snippets_updated_at BEFORE UPDATE
     ON snippets FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- CourtListener integration tables
+CREATE TABLE IF NOT EXISTS courtlistener_cache (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    courtlistener_id INTEGER UNIQUE NOT NULL,
+    opinion_data JSONB,
+    imported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    local_snippet_id UUID REFERENCES snippets(id) ON DELETE SET NULL,
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS courtlistener_docket_cache (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    docket_id INTEGER UNIQUE NOT NULL,
+    docket_data JSONB,
+    imported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    related_events JSONB DEFAULT '[]'::jsonb,
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Indexes for CourtListener cache
+CREATE INDEX IF NOT EXISTS idx_courtlistener_cache_opinion_id 
+    ON courtlistener_cache(courtlistener_id);
+CREATE INDEX IF NOT EXISTS idx_courtlistener_docket_cache_docket_id 
+    ON courtlistener_docket_cache(docket_id);
 """
 
 QDRANT_COLLECTIONS = {

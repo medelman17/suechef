@@ -19,6 +19,7 @@ import openai
 
 from database_schema import POSTGRES_SCHEMA, QDRANT_COLLECTIONS
 import legal_tools
+import courtlistener_tools
 
 # Initialize FastMCP server
 mcp = FastMCP("unified-legal-mcp")
@@ -283,6 +284,77 @@ async def list_tools() -> list[Tool]:
                 },
                 "required": ["snippet_id"]
             }
+        ),
+        # CourtListener integration tools
+        Tool(
+            name="search_courtlistener_opinions",
+            description="Search CourtListener for court opinions matching query",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search terms (e.g., 'landlord tenant water damage')"},
+                    "court": {"type": "string", "description": "Court abbreviation (e.g., 'scotus', 'ca9')"},
+                    "date_after": {"type": "string", "description": "Filter opinions after this date (YYYY-MM-DD)"},
+                    "date_before": {"type": "string", "description": "Filter opinions before this date"},
+                    "cited_gt": {"type": "integer", "description": "Minimum number of times opinion has been cited"},
+                    "limit": {"type": "integer", "description": "Maximum results to return", "default": 20}
+                },
+                "required": ["query"]
+            }
+        ),
+        Tool(
+            name="import_courtlistener_opinion",
+            description="Import a CourtListener opinion into your legal research system",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "opinion_id": {"type": "integer", "description": "CourtListener opinion ID"},
+                    "add_as_snippet": {"type": "boolean", "description": "Create a snippet in your local system", "default": true},
+                    "auto_link_events": {"type": "boolean", "description": "Attempt to link with existing chronology events", "default": true}
+                },
+                "required": ["opinion_id"]
+            }
+        ),
+        Tool(
+            name="search_courtlistener_dockets",
+            description="Search CourtListener dockets (active cases) for procedural history and party information",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "case_name": {"type": "string", "description": "Case name to search for"},
+                    "docket_number": {"type": "string", "description": "Docket number"},
+                    "court": {"type": "string", "description": "Court abbreviation"},
+                    "date_filed_after": {"type": "string", "description": "Cases filed after this date (YYYY-MM-DD)"},
+                    "date_filed_before": {"type": "string", "description": "Cases filed before this date"},
+                    "limit": {"type": "integer", "description": "Maximum results", "default": 20}
+                }
+            }
+        ),
+        Tool(
+            name="find_citing_opinions",
+            description="Find all opinions that cite a specific case",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "citation": {"type": "string", "description": "Citation to search for (e.g., '123 F.3d 456')"},
+                    "limit": {"type": "integer", "description": "Maximum results", "default": 20}
+                },
+                "required": ["citation"]
+            }
+        ),
+        Tool(
+            name="analyze_courtlistener_precedents",
+            description="Analyze precedent evolution on a topic using CourtListener data",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "topic": {"type": "string", "description": "Legal topic to analyze"},
+                    "jurisdiction": {"type": "string", "description": "Court jurisdiction (e.g., 'ca9')"},
+                    "min_citations": {"type": "integer", "description": "Minimum citation count", "default": 5},
+                    "date_range_years": {"type": "integer", "description": "Years of history to analyze", "default": 30}
+                },
+                "required": ["topic"]
+            }
         )
     ]
 
@@ -370,6 +442,20 @@ async def call_tool(name: str, arguments: dict) -> str:
             result = await legal_tools.delete_snippet(
                 postgres_pool, qdrant_client, **arguments
             )
+        # CourtListener operations
+        elif name == "search_courtlistener_opinions":
+            result = await courtlistener_tools.search_courtlistener_opinions(**arguments)
+        elif name == "import_courtlistener_opinion":
+            result = await courtlistener_tools.import_courtlistener_opinion(
+                postgres_pool, qdrant_client, graphiti_client, openai_client,
+                **arguments
+            )
+        elif name == "search_courtlistener_dockets":
+            result = await courtlistener_tools.search_courtlistener_dockets(**arguments)
+        elif name == "find_citing_opinions":
+            result = await courtlistener_tools.find_citing_opinions(**arguments)
+        elif name == "analyze_courtlistener_precedents":
+            result = await courtlistener_tools.analyze_courtlistener_precedents(**arguments)
         else:
             return json.dumps({"error": f"Unknown tool: {name}"})
         
