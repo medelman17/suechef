@@ -4,7 +4,7 @@ A simplified, modular implementation using the new architecture.
 """
 
 import asyncio
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union
 
 from fastmcp import FastMCP
 import sentry_sdk
@@ -67,26 +67,71 @@ async def ensure_initialized():
 # =============================================================================
 
 @mcp.tool()
+async def test_array_parameters(
+    test_parties: Optional[Any] = None,
+    test_tags: Optional[Any] = None
+) -> Dict[str, Any]:
+    """Test tool for diagnosing array parameter parsing issues."""
+    from src.utils.parameter_parsing import parse_string_list
+    
+    try:
+        parties_result = parse_string_list(test_parties)
+        tags_result = parse_string_list(test_tags)
+        
+        return {
+            "status": "success",
+            "results": {
+                "parties": {
+                    "input": test_parties,
+                    "input_type": str(type(test_parties)),
+                    "parsed": parties_result,
+                    "parsed_type": str(type(parties_result))
+                },
+                "tags": {
+                    "input": test_tags,
+                    "input_type": str(type(test_tags)),
+                    "parsed": tags_result,
+                    "parsed_type": str(type(tags_result))
+                }
+            },
+            "message": "Array parameter parsing test completed successfully"
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Array parsing test failed: {str(e)}",
+            "debug_info": {
+                "test_parties": str(test_parties),
+                "test_tags": str(test_tags)
+            }
+        }
+
+@mcp.tool()
 async def add_event(
     date: str,
     description: str,
-    parties: Optional[List[str]] = None,
+    parties: Optional[Any] = None,  # Accept Any type for flexible parsing
     document_source: Optional[str] = None,
     excerpts: Optional[str] = None,
-    tags: Optional[List[str]] = None,
+    tags: Optional[Any] = None,     # Accept Any type for flexible parsing
     significance: Optional[str] = None,
     group_id: str = "default"
 ) -> Dict[str, Any]:
     """Add chronology events with automatic vector and knowledge graph storage (MODULAR VERSION)."""
     await ensure_initialized()
     
+    # Normalize array parameters using existing parser
+    from src.utils.parameter_parsing import parse_string_list
+    normalized_parties = parse_string_list(parties)
+    normalized_tags = parse_string_list(tags)
+    
     return await event_service.create_event(
         date=date,
         description=description,
-        parties=parties,
+        parties=normalized_parties,
         document_source=document_source,
         excerpts=excerpts,
-        tags=tags,
+        tags=normalized_tags,
         significance=significance,
         group_id=group_id,
         openai_api_key=config.api.openai_api_key
@@ -106,20 +151,25 @@ async def list_events(
     offset: int = 0,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
-    parties_filter: Optional[List[str]] = None,
-    tags_filter: Optional[List[str]] = None,
+    parties_filter: Optional[Any] = None,  # Accept Any type for flexible parsing
+    tags_filter: Optional[Any] = None,     # Accept Any type for flexible parsing
     group_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """List events with optional filtering (MODULAR VERSION)."""
     await ensure_initialized()
+    
+    # Normalize array parameters using existing parser
+    from src.utils.parameter_parsing import parse_string_list
+    normalized_parties_filter = parse_string_list(parties_filter) if parties_filter is not None else None
+    normalized_tags_filter = parse_string_list(tags_filter) if tags_filter is not None else None
     
     return await event_service.list_events(
         limit=limit,
         offset=offset,
         date_from=date_from,
         date_to=date_to,
-        parties_filter=parties_filter,
-        tags_filter=tags_filter,
+        parties_filter=normalized_parties_filter,
+        tags_filter=normalized_tags_filter,
         group_id=group_id
     )
 
@@ -130,7 +180,7 @@ async def list_events(
 async def create_snippet(
     citation: str,
     key_language: str,
-    tags: Optional[List[str]] = None,
+    tags: Optional[Any] = None,  # Accept Any type for flexible parsing
     context: Optional[str] = None,
     case_type: Optional[str] = None,
     group_id: str = "default"
@@ -138,10 +188,14 @@ async def create_snippet(
     """Create legal research snippets (MODULAR VERSION)."""
     await ensure_initialized()
     
+    # Normalize array parameters using existing parser
+    from src.utils.parameter_parsing import parse_string_list
+    normalized_tags = parse_string_list(tags)
+    
     return await snippet_service.create_snippet(
         citation=citation,
         key_language=key_language,
-        tags=tags,
+        tags=normalized_tags,
         context=context,
         case_type=case_type,
         group_id=group_id,
@@ -162,17 +216,21 @@ async def list_snippets(
     limit: int = 50,
     offset: int = 0,
     case_type: Optional[str] = None,
-    tags_filter: Optional[List[str]] = None,
+    tags_filter: Optional[Any] = None,  # Accept Any type for flexible parsing
     group_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """List snippets with optional filtering (MODULAR VERSION)."""
     await ensure_initialized()
     
+    # Normalize array parameters using existing parser
+    from src.utils.parameter_parsing import parse_string_list
+    normalized_tags_filter = parse_string_list(tags_filter) if tags_filter is not None else None
+    
     return await snippet_service.list_snippets(
         limit=limit,
         offset=offset,
         case_type=case_type,
-        tags_filter=tags_filter,
+        tags_filter=normalized_tags_filter,
         group_id=group_id
     )
 
@@ -182,18 +240,22 @@ async def update_snippet(
     snippet_id: str,
     citation: Optional[str] = None,
     key_language: Optional[str] = None,
-    tags: Optional[List[str]] = None,
+    tags: Optional[Any] = None,  # Accept Any type for flexible parsing
     context: Optional[str] = None,
     case_type: Optional[str] = None
 ) -> Dict[str, Any]:
     """Update an existing snippet (MODULAR VERSION)."""
     await ensure_initialized()
     
+    # Normalize array parameters using existing parser
+    from src.utils.parameter_parsing import parse_string_list
+    normalized_tags = parse_string_list(tags) if tags is not None else None
+    
     return await snippet_service.update_snippet(
         snippet_id=snippet_id,
         citation=citation,
         key_language=key_language,
-        tags=tags,
+        tags=normalized_tags,
         context=context,
         case_type=case_type,
         openai_api_key=config.api.openai_api_key
