@@ -113,6 +113,18 @@ docker-compose down -v
 - OpenAI API key (for embeddings)
 - CourtListener API key (optional, for enhanced access)
 
+## 🖥️ Claude Desktop Integration
+
+**NEW**: SueChef now integrates seamlessly with Claude Desktop for enhanced AI-powered legal research!
+
+### Quick Setup for Claude Desktop
+1. Start SueChef: `docker-compose up -d`
+2. Configure Claude Desktop with the provided config
+3. Access 26+ legal research tools directly in Claude Desktop
+
+**→ See [CLAUDE_DESKTOP_SETUP.md](CLAUDE_DESKTOP_SETUP.md) for complete integration guide**  
+**→ See [example-workflows.md](example-workflows.md) for real-world usage examples**
+
 ## Installation
 
 ### Option 1: Docker (Recommended)
@@ -152,6 +164,9 @@ uv run python setup.py
 SueChef runs as an HTTP server that implements the MCP (Model Context Protocol) over streaming HTTP. You can connect to it from any MCP-compatible client:
 
 **Endpoint**: `http://localhost:8000/mcp`
+
+#### Claude Desktop Integration (Recommended)
+The easiest way to use SueChef is through Claude Desktop. See [CLAUDE_DESKTOP_SETUP.md](CLAUDE_DESKTOP_SETUP.md) for setup instructions.
 
 #### Example Client Connection (Python)
 ```python
