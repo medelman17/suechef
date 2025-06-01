@@ -236,8 +236,18 @@ class CourtListenerService:
             
             processed_results = []
             for item in result.get("results", []):
+                # Extract opinion ID from cluster_id or absolute_url
+                opinion_id = item.get("cluster_id")
+                if not opinion_id and item.get("absolute_url"):
+                    # Extract ID from URL like "/opinion/7404835/myska-v-new-jersey/"
+                    url_parts = item.get("absolute_url", "").split("/")
+                    for part in url_parts:
+                        if part.isdigit():
+                            opinion_id = int(part)
+                            break
+                
                 processed_results.append({
-                    "id": item.get("id"),
+                    "id": opinion_id,  # Use cluster_id as the opinion ID
                     "case_name": item.get("caseName") or item.get("case_name"),
                     "court": item.get("court"),
                     "date_filed": item.get("dateFiled") or item.get("date_filed"),
@@ -245,7 +255,7 @@ class CourtListenerService:
                     "snippet": item.get("snippet", ""),
                     "absolute_url": f"https://www.courtlistener.com{item.get('absolute_url', '')}",
                     "citation_count": item.get("citeCount") or item.get("citation_count", 0),
-                    "cluster_id": item.get("cluster_id")
+                    "cluster_id": item.get("cluster_id")  # Keep original for reference
                 })
             
             return {
