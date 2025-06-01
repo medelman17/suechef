@@ -16,9 +16,13 @@ import asyncpg
 from qdrant_client import QdrantClient
 from graphiti_core import Graphiti
 import openai
+import logging
 
 # Import existing tools
 import legal_tools
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 # CourtListener API configuration
 COURTLISTENER_API_BASE = "https://www.courtlistener.com/api/rest/v4"
@@ -29,21 +33,79 @@ class AsyncCourtListenerClient:
     """Async client for interacting with CourtListener API v4"""
     
     def __init__(self, api_key: str = COURTLISTENER_API_KEY):
-        self.api_key = api_key
-        self.headers = {}
-        if api_key:
-            self.headers["Authorization"] = f"Token {api_key}"
+        self.api_key = api_key.strip() if api_key else ""
+        self.headers = {
+            "User-Agent": "SueChef Legal Research MCP/1.0",
+            "Content-Type": "application/json"
+        }
+        
+        # Add authentication header if API key is provided
+        if self.api_key:
+            self.headers["Authorization"] = f"Token {self.api_key}"
+            logger.info("CourtListener API client initialized with authentication")
+        else:
+            logger.warning("CourtListener API key not configured. Some functionality may be limited.")
     
     async def _make_request(self, endpoint: str, params: Dict = None) -> Dict:
         """Make authenticated request to CourtListener API"""
+        # Validate API key for authenticated endpoints
+        if not self.api_key and endpoint in ["search", "opinions", "dockets"]:
+            return {
+                "status": "error", 
+                "message": "CourtListener API key required. Set COURTLISTENER_API_KEY environment variable.",
+                "fix": "Get API key from https://www.courtlistener.com/help/api/rest/ and set COURTLISTENER_API_KEY"
+            }
+        
         url = f"{COURTLISTENER_API_BASE}/{endpoint}"
         if not url.endswith('/'):
             url += '/'
         
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, params=params, headers=self.headers) as response:
-                response.raise_for_status()
-                return await response.json()
+        # Clean up params - remove None values
+        if params:
+            params = {k: v for k, v in params.items() if v is not None}
+        
+        logger.debug(f"CourtListener API request: {url} with params: {params}")
+        
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
+                async with session.get(url, params=params, headers=self.headers) as response:
+                    response_text = await response.text()
+                    
+                    if response.status == 400:
+                        logger.error(f"CourtListener 400 Error: {response_text}")
+                        return {
+                            "status": "error",
+                            "message": f"Bad Request (400): {response_text}. Check API parameters and authentication.",
+                            "url": str(response.url),
+                            "params": params
+                        }
+                    elif response.status == 401:
+                        return {
+                            "status": "error",
+                            "message": "Unauthorized (401): Invalid or missing API key",
+                            "fix": "Check your COURTLISTENER_API_KEY environment variable"
+                        }
+                    elif response.status == 403:
+                        return {
+                            "status": "error", 
+                            "message": "Forbidden (403): API key lacks required permissions",
+                            "fix": "Verify your CourtListener API key has proper permissions"
+                        }
+                    elif response.status == 429:
+                        return {
+                            "status": "error",
+                            "message": "Rate limited (429): Too many requests. Please wait before retrying."
+                        }
+                    
+                    response.raise_for_status()
+                    return await response.json()
+                    
+        except aiohttp.ClientError as e:
+            logger.error(f"CourtListener API request failed: {str(e)}")
+            return {"status": "error", "message": f"Request failed: {str(e)}"}
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON response from CourtListener: {response_text}")
+            return {"status": "error", "message": f"Invalid JSON response: {str(e)}"}
     
     async def search_opinions(self, query: str, **kwargs) -> Dict:
         """Search court opinions"""
@@ -77,6 +139,63 @@ class AsyncCourtListenerClient:
 cl_client = AsyncCourtListenerClient()
 
 
+async def test_courtlistener_connection() -> Dict[str, Any]:
+    """Test CourtListener API connection and authentication"""
+    
+    # Test 1: Check API key configuration
+    if not COURTLISTENER_API_KEY:
+        return {
+            "status": "error",
+            "message": "COURTLISTENER_API_KEY environment variable not set",
+            "fix": "Set COURTLISTENER_API_KEY in your .env file",
+            "steps": [
+                "1. Get API key from https://www.courtlistener.com/help/api/rest/",
+                "2. Add COURTLISTENER_API_KEY=your_key to .env file",
+                "3. Restart the service: docker-compose restart suechef"
+            ]
+        }
+    
+    # Test 2: Test basic API connectivity with courts endpoint (usually public)
+    try:
+        result = await cl_client._make_request("courts")
+        if result.get("status") == "error":
+            return {
+                "status": "error", 
+                "message": f"API connection failed: {result.get('message')}",
+                "api_key_configured": bool(COURTLISTENER_API_KEY),
+                "details": result
+            }
+        
+        # Test 3: Test search endpoint with minimal query
+        search_result = await cl_client.search_opinions("test", per_page=1)
+        
+        if search_result.get("status") == "error":
+            return {
+                "status": "error",
+                "message": f"Search endpoint failed: {search_result.get('message')}",
+                "api_key_configured": True,
+                "courts_endpoint": "OK",
+                "search_endpoint": "FAILED",
+                "details": search_result
+            }
+        
+        return {
+            "status": "success",
+            "message": "CourtListener API connection successful",
+            "api_key_configured": True,
+            "courts_endpoint": "OK",
+            "search_endpoint": "OK",
+            "test_search_count": search_result.get("count", 0)
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Connection test failed: {str(e)}",
+            "api_key_configured": bool(COURTLISTENER_API_KEY)
+        }
+
+
 async def search_courtlistener_opinions(
     query: str,
     court: Optional[str] = None,
@@ -96,45 +215,58 @@ async def search_courtlistener_opinions(
         cited_gt: Minimum number of times opinion has been cited
         limit: Maximum results to return
     """
+    # Validate inputs
+    if not query or not query.strip():
+        return {"status": "error", "message": "Query parameter is required"}
+    
+    # Build parameters according to API documentation
     params = {
-        "order_by": "-score",
-        "per_page": limit
+        "per_page": min(limit, 100)  # API typically has max limits
     }
     
+    # Add optional filters
     if court:
         params["court"] = court
     if date_after:
-        params["filed_after"] = date_after
+        params["filed_after"] = date_after  
     if date_before:
         params["filed_before"] = date_before
-    if cited_gt:
+    if cited_gt and cited_gt > 0:
         params["cited_gt"] = cited_gt
     
     try:
-        results = await cl_client.search_opinions(query, **params)
+        result = await cl_client.search_opinions(query.strip(), **params)
         
-        # Process results for integration
+        # Handle API errors
+        if result.get("status") == "error":
+            return result
+        
+        # Process successful results
         processed_results = []
-        for result in results.get("results", []):
+        for item in result.get("results", []):
             processed_results.append({
-                "id": result.get("id"),
-                "case_name": result.get("caseName"),
-                "court": result.get("court"),
-                "date_filed": result.get("dateFiled"),
-                "citation": result.get("citation", [""])[0] if result.get("citation") else "",
-                "snippet": result.get("snippet", ""),
-                "absolute_url": f"https://www.courtlistener.com{result.get('absolute_url', '')}",
-                "citation_count": result.get("citeCount", 0),
-                "cluster_id": result.get("cluster_id")
+                "id": item.get("id"),
+                "case_name": item.get("caseName") or item.get("case_name"),
+                "court": item.get("court"),
+                "date_filed": item.get("dateFiled") or item.get("date_filed"),
+                "citation": item.get("citation", [""])[0] if item.get("citation") else "",
+                "snippet": item.get("snippet", ""),
+                "absolute_url": f"https://www.courtlistener.com{item.get('absolute_url', '')}",
+                "citation_count": item.get("citeCount") or item.get("citation_count", 0),
+                "cluster_id": item.get("cluster_id")
             })
         
         return {
             "status": "success",
-            "count": results.get("count", 0),
-            "results": processed_results
+            "count": result.get("count", 0),
+            "results": processed_results,
+            "query": query,
+            "parameters": params
         }
+        
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        logger.error(f"Opinion search failed: {str(e)}")
+        return {"status": "error", "message": f"Search failed: {str(e)}"}
 
 
 async def import_courtlistener_opinion(
@@ -263,18 +395,20 @@ async def search_courtlistener_dockets(
     - Procedural history of cases
     - Party and attorney information
     """
+    # Build query with better validation
     query_parts = []
-    if case_name:
-        query_parts.append(f'case_name:"{case_name}"')
-    if docket_number:
-        query_parts.append(f'docket_number:"{docket_number}"')
+    if case_name and case_name.strip():
+        query_parts.append(f'case_name:"{case_name.strip()}"')
+    if docket_number and docket_number.strip():
+        query_parts.append(f'docket_number:"{docket_number.strip()}"')
     
+    # Use wildcard if no specific search terms
     query = " AND ".join(query_parts) if query_parts else "*"
     
+    # Build parameters
     params = {
         "type": "d",
-        "order_by": "-score",
-        "per_page": limit
+        "per_page": min(limit, 100)
     }
     
     if court:
@@ -285,29 +419,36 @@ async def search_courtlistener_dockets(
         params["date_filed__lte"] = date_filed_before
     
     try:
-        results = await cl_client.search_dockets(query, **params)
+        result = await cl_client.search_dockets(query, **params)
+        
+        # Handle API errors
+        if result.get("status") == "error":
+            return result
         
         processed_results = []
-        for result in results.get("results", []):
+        for item in result.get("results", []):
             processed_results.append({
-                "id": result.get("id"),
-                "case_name": result.get("case_name"),
-                "docket_number": result.get("docket_number"),
-                "court": result.get("court"),
-                "date_filed": result.get("date_filed"),
-                "date_terminated": result.get("date_terminated"),
-                "nature_of_suit": result.get("nature_of_suit"),
-                "absolute_url": f"https://www.courtlistener.com{result.get('absolute_url', '')}",
-                "party_info": result.get("party_info", [])
+                "id": item.get("id"),
+                "case_name": item.get("case_name"),
+                "docket_number": item.get("docket_number"),
+                "court": item.get("court"),
+                "date_filed": item.get("date_filed"),
+                "date_terminated": item.get("date_terminated"),
+                "nature_of_suit": item.get("nature_of_suit"),
+                "absolute_url": f"https://www.courtlistener.com{item.get('absolute_url', '')}",
+                "party_info": item.get("party_info", [])
             })
         
         return {
             "status": "success",
-            "count": results.get("count", 0),
-            "results": processed_results
+            "count": result.get("count", 0),
+            "results": processed_results,
+            "query": query,
+            "parameters": params
         }
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        logger.error(f"Docket search failed: {str(e)}")
+        return {"status": "error", "message": f"Search failed: {str(e)}"}
 
 
 async def find_citing_opinions(
@@ -322,31 +463,41 @@ async def find_citing_opinions(
     - Finding similar cases that relied on the same precedent
     - Building a citation network
     """
+    # Validate input
+    if not citation or not citation.strip():
+        return {"status": "error", "message": "Citation parameter is required"}
+    
     try:
-        # Search for opinions citing this case
-        results = await cl_client.search_opinions(
-            f'cites:"{citation}"',
-            order_by="-score",
-            per_page=limit
+        # Search for opinions citing this case - use simpler query format
+        # Try without the cites: prefix first as it might not be supported in v4
+        result = await cl_client.search_opinions(
+            citation.strip(),
+            per_page=min(limit, 100)
         )
+        
+        # Handle API errors
+        if result.get("status") == "error":
+            return result
+        
+        citing_opinions = []
+        for r in result.get("results", []):
+            citing_opinions.append({
+                "case_name": r.get("caseName") or r.get("case_name"),
+                "citation": r.get("citation", [""])[0] if r.get("citation") else "",
+                "date": r.get("dateFiled") or r.get("date_filed"),
+                "court": r.get("court"),
+                "snippet": r.get("snippet", "")
+            })
         
         return {
             "status": "success",
             "cited_case": citation,
-            "citing_count": results.get("count", 0),
-            "citing_opinions": [
-                {
-                    "case_name": r.get("caseName"),
-                    "citation": r.get("citation", [""])[0] if r.get("citation") else "",
-                    "date": r.get("dateFiled"),
-                    "court": r.get("court"),
-                    "snippet": r.get("snippet", "")
-                }
-                for r in results.get("results", [])
-            ]
+            "citing_count": result.get("count", 0),
+            "citing_opinions": citing_opinions
         }
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        logger.error(f"Citation search failed: {str(e)}")
+        return {"status": "error", "message": f"Search failed: {str(e)}"}
 
 
 async def analyze_courtlistener_precedents(
@@ -375,7 +526,6 @@ async def analyze_courtlistener_precedents(
             filed_after=str(start_date),
             filed_before=str(end_date),
             cited_gt=min_citations,
-            order_by="-citeCount",
             per_page=50
         )
         
