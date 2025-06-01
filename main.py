@@ -30,8 +30,23 @@ import legal_tools
 import openai
 
 
-# Initialize FastMCP server
-mcp = FastMCP("suechef")
+# Lifespan context manager for proper initialization
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app):
+    """Server startup and shutdown logic"""
+    # Startup
+    await initialize_services()
+    try:
+        yield
+    finally:
+        # Shutdown
+        if db_manager:
+            await db_manager.close()
+
+# Initialize FastMCP server with lifespan
+mcp = FastMCP("suechef", lifespan=lifespan)
 
 # Global components
 config = None
@@ -43,8 +58,6 @@ courtlistener_service = None
 
 async def ensure_initialized():
     """Ensure all components are initialized."""
-    global config, db_manager, event_service, snippet_service, courtlistener_service
-    
     if config is None:
         raise RuntimeError("Services not initialized. This should not happen.")
 
@@ -312,10 +325,11 @@ async def unified_legal_search(
 ) -> Dict[str, Any]:
     """Ultimate hybrid search across PostgreSQL + Qdrant + Graphiti (LEGACY VERSION)."""
     await ensure_initialized()
+    # Note: Legacy unified_legal_search doesn't support group_id parameter
     return await legal_tools.unified_legal_search(
         db_manager.postgres, db_manager.qdrant, db_manager.graphiti,
         openai.AsyncOpenAI(api_key=config.api.openai_api_key),
-        query, search_type, group_id
+        query, search_type
     )
 
 
@@ -374,8 +388,11 @@ SueChef Modular Architecture:
 # =============================================================================
 
 async def initialize_services():
-    """Initialize all services at startup"""
+    """Initialize all services"""
     global config, db_manager, event_service, snippet_service, courtlistener_service
+    
+    if config is not None:
+        return  # Already initialized
     
     try:
         config = get_config()
@@ -404,7 +421,7 @@ async def initialize_services():
         print(f"❌ Service initialization error: {e}")
         import traceback
         traceback.print_exc()
-        exit(1)
+        raise
 
 
 if __name__ == "__main__":
@@ -412,15 +429,14 @@ if __name__ == "__main__":
     print("📚 Using new layered architecture with EventService + SnippetService")
     print("🔄 Mixed mode: 8 tools migrated, 18 legacy tools transitioning")
     
-    # Initialize services synchronously at startup
-    import asyncio
-    asyncio.run(initialize_services())
+    # Get initial config for server settings
+    initial_config = get_config()
     
-    # Start server
+    # Start server (lifespan will handle initialization)
     mcp.run(
         transport="streamable-http",
-        host=config.mcp.host,
-        port=config.mcp.port,
-        path=config.mcp.path,
-        log_level=config.mcp.log_level
+        host=initial_config.mcp.host,
+        port=initial_config.mcp.port,
+        path=initial_config.mcp.path,
+        log_level=initial_config.mcp.log_level
     )
