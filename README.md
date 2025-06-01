@@ -10,6 +10,7 @@
 
 <p align="center">
   <a href="#features">Features</a> •
+  <a href="#quick-start-with-docker">Quick Start</a> •
   <a href="#installation">Installation</a> •
   <a href="#usage">Usage</a> •
   <a href="#architecture--the-suechef-kitchen-">Architecture</a> •
@@ -59,17 +60,64 @@ SueChef is a powerful legal research MCP (Model Context Protocol) that combines 
 - **find_citing_opinions**: Discover all cases that cite a specific precedent
 - **analyze_courtlistener_precedents**: Analyze how legal precedents evolved over decades
 
+### 🧠 Advanced Knowledge Graph Features
+- **build_legal_communities**: Build communities to identify legal concept clusters
+- **search_legal_communities**: Search for communities related to legal queries
+- **enhanced_legal_search**: Configurable search with SearchConfig for nodes/edges/communities
+
+## Quick Start with Docker
+
+The fastest way to get SueChef running is with Docker Compose:
+
+### 1. Clone and Setup
+```bash
+git clone https://github.com/medelman17/suechef.git
+cd suechef
+cp .env.example .env
+# Edit .env with your OpenAI API key
+```
+
+### 2. Start Services
+```bash
+# Start just the databases (recommended for development)
+docker-compose up -d
+
+# Or start everything including SueChef MCP server
+docker-compose --profile full up -d
+```
+
+### 3. Initialize Database
+```bash
+# Run setup script to create schemas
+uv run python setup.py
+```
+
+### 4. Access Services
+- **PostgreSQL**: `localhost:5432` (user: postgres, password: suechef_password)
+- **Qdrant**: `http://localhost:6333` (dashboard at `/dashboard`)
+- **Neo4j**: `http://localhost:7474` (user: neo4j, password: suechef_neo4j_password)
+- **SueChef MCP**: `localhost:8000` (if using --profile full)
+
+### 5. Stop Services
+```bash
+docker-compose down
+# Add -v to remove volumes and reset data
+docker-compose down -v
+```
+
 ## Prerequisites
 
 - Python 3.12+
-- PostgreSQL
-- Qdrant vector database
-- Neo4j graph database
+- Docker & Docker Compose (for quick setup)
 - OpenAI API key (for embeddings)
 - CourtListener API key (optional, for enhanced access)
 
 ## Installation
 
+### Option 1: Docker (Recommended)
+Follow the [Quick Start](#quick-start-with-docker) above.
+
+### Option 2: Local Development
 1. Clone the repository:
 ```bash
 git clone https://github.com/medelman17/suechef.git
@@ -81,18 +129,17 @@ cd suechef
 uv sync
 ```
 
-3. Set up environment variables:
+3. Set up local databases:
+   - Install PostgreSQL, Qdrant, and Neo4j locally
+   - Or use Docker for databases only: `docker-compose up -d postgres qdrant neo4j`
+
+4. Set up environment variables:
 ```bash
-export POSTGRES_URL="postgresql://localhost/legal_research"
-export QDRANT_URL="http://localhost:6333"
-export NEO4J_URI="bolt://localhost:7687"
-export NEO4J_USER="neo4j"
-export NEO4J_PASSWORD="your-password"
-export OPENAI_API_KEY="your-openai-api-key"
-export COURTLISTENER_API_KEY="your-courtlistener-api-key"  # Optional
+cp .env.example .env
+# Edit .env with your configuration
 ```
 
-4. Run the setup script:
+5. Run the setup script:
 ```bash
 uv run python setup.py
 ```
@@ -206,6 +253,18 @@ uv add <package-name>
 ### Running Tests
 ```bash
 uv run pytest
+```
+
+### Docker Development
+```bash
+# Rebuild after code changes
+docker-compose build suechef
+
+# View logs
+docker-compose logs -f suechef
+
+# Access running container
+docker-compose exec suechef bash
 ```
 
 ## License
