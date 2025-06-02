@@ -216,3 +216,198 @@ class EventService(BaseService):
                 message=f"Failed to list events: {str(e)}",
                 error_type="retrieval_error"
             )
+
+    async def update_event(
+        self,
+        event_id: str,
+        date: Optional[str] = None,
+        description: Optional[str] = None,
+        parties: Optional[List[str]] = None,
+        document_source: Optional[str] = None,
+        excerpts: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        significance: Optional[str] = None,
+        openai_api_key: str = ""
+    ) -> Dict[str, Any]:
+        """Update an existing event."""
+        
+        try:
+            # Build update query dynamically
+            updates = []
+            params = []
+            param_count = 0
+            
+            if date is not None:
+                param_count += 1
+                updates.append(f"date = ${param_count}")
+                params.append(datetime.strptime(date, "%Y-%m-%d").date())
+            
+            if description is not None:
+                param_count += 1
+                updates.append(f"description = ${param_count}")
+                params.append(description)
+            
+            if parties is not None:
+                param_count += 1
+                updates.append(f"parties = ${param_count}")
+                params.append(json.dumps(parties))
+            
+            if document_source is not None:
+                param_count += 1
+                updates.append(f"document_source = ${param_count}")
+                params.append(document_source)
+            
+            if excerpts is not None:
+                param_count += 1
+                updates.append(f"excerpts = ${param_count}")
+                params.append(excerpts)
+            
+            if tags is not None:
+                param_count += 1
+                updates.append(f"tags = ${param_count}")
+                params.append(json.dumps(tags))
+            
+            if significance is not None:
+                param_count += 1
+                updates.append(f"significance = ${param_count}")
+                params.append(significance)
+            
+            if not updates:
+                return self._error_response("No fields provided for update", "validation_error")
+            
+            # Add updated_at timestamp
+            param_count += 1
+            updates.append(f"updated_at = ${param_count}")
+            params.append(datetime.utcnow())
+            
+            # Add event_id for WHERE clause
+            param_count += 1
+            params.append(uuid.UUID(event_id))
+            
+            # Execute update
+            async with self.db.postgres.acquire() as conn:
+                updated_event = await conn.fetchrow(
+                    f"""
+                    UPDATE events SET {', '.join(updates)}
+                    WHERE id = ${param_count}
+                    RETURNING id, date, description, parties, document_source, excerpts, tags, significance, group_id, created_at, updated_at
+                    """,
+                    *params
+                )
+                
+                if not updated_event:
+                    return self._error_response("Event not found", "not_found")
+            
+            # Update vector embedding if description changed
+            if description is not None:
+                try:
+                    openai_client = openai.AsyncOpenAI(api_key=openai_api_key)
+                    full_text = f"{description} {excerpts or ''}"
+                    embedding = await get_embedding(full_text, openai_client)
+                    
+                    # Update in Qdrant
+                    self.db.qdrant.upsert(
+                        collection_name="legal_events",
+                        points=[PointStruct(
+                            id=str(event_id),
+                            vector=embedding,
+                            payload={
+                                "type": "event",
+                                "description": description,
+                                "date": date or str(updated_event["date"]),
+                                "parties": parties or json.loads(updated_event["parties"] or "[]"),
+                                "tags": tags or json.loads(updated_event["tags"] or "[]"),
+                                "group_id": updated_event["group_id"]
+                            }
+                        )]
+                    )
+                except Exception as e:
+                    # Vector update failed, but PostgreSQL update succeeded
+                    pass
+            
+            # Update knowledge graph if needed
+            if description is not None:
+                try:
+                    await self.db.graphiti.add_episode(
+                        name=f"Event Update: {description[:50]}...",
+                        episode_body=f"Updated legal event: {description}. {excerpts or ''}",
+                        source_description=f"Legal event update {event_id}",
+                        source=EpisodeType.text,
+                        group_id=updated_event["group_id"]
+                    )
+                except Exception as e:
+                    # Knowledge graph update failed, but core update succeeded
+                    pass
+            
+            # Format response
+            event_dict = dict(updated_event)
+            event_dict["parties"] = json.loads(event_dict["parties"] or "[]")
+            event_dict["tags"] = json.loads(event_dict["tags"] or "[]")
+            event_dict["id"] = str(event_dict["id"])
+            
+            return self._success_response(
+                data=event_dict,
+                message="Event updated successfully"
+            )
+            
+        except ValueError as e:
+            if "UUID" in str(e):
+                return self._error_response("Invalid event ID format", "validation_error")
+            elif "time data" in str(e):
+                return self._error_response("Invalid date format. Use YYYY-MM-DD", "validation_error")
+            else:
+                return self._error_response(f"Validation error: {str(e)}", "validation_error")
+        except Exception as e:
+            return self._error_response(
+                message=f"Failed to update event: {str(e)}",
+                error_type="update_error"
+            )
+
+    async def delete_event(self, event_id: str) -> Dict[str, Any]:
+        """Delete an event from all systems."""
+        
+        try:
+            async with self.db.postgres.acquire() as conn:
+                # Get event details before deletion for cleanup
+                event = await conn.fetchrow(
+                    "SELECT group_id, description FROM events WHERE id = $1",
+                    uuid.UUID(event_id)
+                )
+                
+                if not event:
+                    return self._error_response("Event not found", "not_found")
+                
+                # Delete from PostgreSQL (cascade will handle related records)
+                deleted = await conn.fetchval(
+                    "DELETE FROM events WHERE id = $1 RETURNING id",
+                    uuid.UUID(event_id)
+                )
+            
+            # Delete from Qdrant
+            try:
+                self.db.qdrant.delete(
+                    collection_name="legal_events",
+                    points_selector=[str(event_id)]
+                )
+            except Exception as e:
+                # Qdrant deletion failed, but PostgreSQL deletion succeeded
+                pass
+            
+            # Note: We don't delete from Graphiti as episodes represent historical knowledge
+            # that should be preserved even if the source event is deleted
+            
+            return self._success_response(
+                data={"deleted_id": str(deleted)},
+                message="Event deleted successfully"
+            )
+            
+        except ValueError as e:
+            if "UUID" in str(e):
+                return self._error_response("Invalid event ID format", "validation_error")
+            else:
+                return self._error_response(f"Validation error: {str(e)}", "validation_error")
+        except Exception as e:
+            return self._error_response(
+                message=f"Failed to delete event: {str(e)}",
+                error_type="deletion_error"
+            )

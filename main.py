@@ -59,8 +59,23 @@ courtlistener_service = None
 
 async def ensure_initialized():
     """Ensure all components are initialized."""
-    if config is None:
-        raise RuntimeError("Services not initialized. This should not happen.")
+    if config is None or db_manager is None or event_service is None:
+        await initialize_services()
+    
+    # Double-check that database manager is properly initialized
+    if db_manager is None:
+        raise RuntimeError("DatabaseManager failed to initialize. Check database connections.")
+    
+    # Verify database manager is actually initialized
+    try:
+        # This will raise an error if not initialized
+        _ = db_manager.postgres
+    except RuntimeError as e:
+        if "not initialized" in str(e):
+            # Try to reinitialize
+            await db_manager.initialize()
+        else:
+            raise
 
 
 async def find_related_events(
@@ -650,6 +665,48 @@ async def searchLegalEvents(
         tags_filter=normalized_tags_filter,
         group_id=group_id
     )
+
+
+@mcp.tool()
+async def updateLegalEvent(
+    event_id: str,
+    date: Optional[str] = None,
+    description: Optional[str] = None,
+    parties: Optional[Any] = None,  # Accept Any type for flexible parsing
+    document_source: Optional[str] = None,
+    excerpts: Optional[str] = None,
+    tags: Optional[Any] = None,     # Accept Any type for flexible parsing
+    significance: Optional[str] = None
+) -> Dict[str, Any]:
+    """Update an existing legal event with automatic re-vectorization and knowledge graph updates."""
+    await ensure_initialized()
+    
+    # Normalize array parameters using existing parser
+    from src.utils.parameter_parsing import parse_string_list
+    normalized_parties = parse_string_list(parties) if parties is not None else None
+    normalized_tags = parse_string_list(tags) if tags is not None else None
+    
+    # Get OpenAI API key from config
+    openai_api_key = config.openai.api_key if config and config.openai else ""
+    
+    return await event_service.update_event(
+        event_id=event_id,
+        date=date,
+        description=description,
+        parties=normalized_parties,
+        document_source=document_source,
+        excerpts=excerpts,
+        tags=normalized_tags,
+        significance=significance,
+        openai_api_key=openai_api_key
+    )
+
+
+@mcp.tool()
+async def deleteLegalEvent(event_id: str) -> Dict[str, Any]:
+    """Delete a legal event from all systems (PostgreSQL, Qdrant) with cascade cleanup of related records."""
+    await ensure_initialized()
+    return await event_service.delete_event(event_id)
 
 
 # SNIPPET MANAGEMENT TOOLS (MODULAR VERSION)
@@ -1893,8 +1950,8 @@ SueChef Legal Research Tools (26 tools available):
 • createLegalEvent - Create timestamped legal events with automatic knowledge graph integration
 • retrieveLegalEvent - Retrieve specific legal events with all associated metadata
 • searchLegalEvents - Search and filter legal events by date, parties, tags, or case groups
-• updateLegalEvent - Update existing events with automatic re-vectorization (legacy)
-• deleteLegalEvent - Remove events from all systems with cascade cleanup (legacy)
+• updateLegalEvent - Update existing events with automatic re-vectorization and knowledge graph updates
+• deleteLegalEvent - Remove events from all systems with cascade cleanup of related records
 
 📋 SNIPPET MANAGEMENT:
 • createLegalSnippet - Create searchable legal research snippets from case law and statutes

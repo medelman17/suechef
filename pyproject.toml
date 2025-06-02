@@ -17,3 +17,10 @@ dependencies = [
     "sentry-sdk>=2.29.1",
     "sqlalchemy>=2.0.41",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
+    "pytest-asyncio>=1.0.0",
+    "pytest-mock>=3.14.1",
+]

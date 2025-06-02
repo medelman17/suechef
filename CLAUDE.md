@@ -58,6 +58,21 @@ See `docs/CLAUDE_DESKTOP_SETUP.md` for comprehensive integration guide.
 uv run python setup.py
 ```
 
+### Run tests
+```bash
+# Run all unit tests (fast, no database required)
+uv run pytest tests/unit/ -v
+
+# Run specific test file
+uv run pytest tests/unit/utils/test_parameter_parsing.py -v
+
+# Run tests with coverage
+uv run pytest tests/unit/ --cov=src --cov-report=html
+
+# Run integration tests (requires databases running)
+uv run pytest tests/integration/ -v
+```
+
 ### Add a new dependency
 ```bash
 uv add <package-name>
