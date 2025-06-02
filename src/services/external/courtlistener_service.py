@@ -108,6 +108,10 @@ class AsyncCourtListenerClient:
         """Get specific opinion by ID"""
         return await self._make_request(f"opinions/{opinion_id}")
     
+    async def get_opinion_cluster(self, cluster_id: int) -> Dict:
+        """Get opinion cluster (case) by ID - this is what search results return"""
+        return await self._make_request(f"opinion-clusters/{cluster_id}")
+    
     async def search_dockets(self, query: str, **kwargs) -> Dict:
         """Search court dockets"""
         params = {"q": query, "type": "d", **kwargs}
@@ -291,25 +295,112 @@ class CourtListenerService:
             group_id: Group identifier for data organization
         """
         try:
-            # Fetch full opinion data
-            opinion = await self.client.get_opinion(opinion_id)
+            # First try to get opinion cluster (what search results return)
+            logger.info(f"Attempting to import opinion ID: {opinion_id}")
+            opinion_cluster = await self.client.get_opinion_cluster(opinion_id)
+            logger.info(f"Opinion cluster response type: {type(opinion_cluster)}")
+            logger.info(f"Opinion cluster response: {opinion_cluster}")
             
-            result = {"opinion_id": opinion_id}
+            # Add debug information
+            result = {
+                "opinion_id": opinion_id,
+                "debug_info": {
+                    "api_endpoint_used": f"opinion-clusters/{opinion_id}",
+                    "cluster_response_keys": list(opinion_cluster.keys()) if isinstance(opinion_cluster, dict) else [],
+                    "has_error": opinion_cluster.get("status") == "error" if isinstance(opinion_cluster, dict) else False,
+                    "raw_response_type": str(type(opinion_cluster)),
+                    "api_key_configured": bool(self.api_key)
+                }
+            }
+            
+            # If cluster fails, try individual opinion endpoint
+            if opinion_cluster.get("status") == "error":
+                logger.warning(f"Cluster endpoint failed, trying opinion endpoint for ID {opinion_id}")
+                opinion_cluster = await self.client.get_opinion(opinion_id)
+                result["debug_info"]["api_endpoint_used"] = f"opinions/{opinion_id}"
+                result["debug_info"]["fallback_used"] = True
+            
+            # Use cluster data for extraction
+            opinion = opinion_cluster
             
             # Create snippet if requested
             if add_as_snippet:
                 # Import dependency here to avoid circular imports
                 from src.services.legal.snippet_service import SnippetService
-                snippet_service = SnippetService(self.config)
+                from src.core.database.manager import DatabaseManager
                 
-                # Extract key information
-                case_name = opinion.get("case_name", "Unknown Case")
+                # Use the existing database connections passed to this function
+                temp_db_manager = type('TempDBManager', (), {
+                    'postgres': postgres_pool,
+                    'qdrant': qdrant_client,
+                    'graphiti': graphiti_client
+                })()
+                snippet_service = SnippetService(temp_db_manager)
+                
+                # Extract key information with multiple field name attempts
+                case_name = (
+                    opinion.get("case_name") or 
+                    opinion.get("caseName") or 
+                    opinion.get("case_name_full") or 
+                    "Unknown Case"
+                )
+                
+                # Handle different citation formats
                 citations = opinion.get("citations", [])
+                if not citations and opinion.get("citation"):
+                    citations = opinion.get("citation") if isinstance(opinion.get("citation"), list) else [opinion.get("citation")]
+                
                 citation_string = citations[0] if citations else f"Opinion ID: {opinion_id}"
                 
-                # Get the opinion text
-                opinion_text = opinion.get("plain_text", opinion.get("html", ""))
+                # Get court information
+                court_info = opinion.get("court", {})
+                court_name = (
+                    court_info.get("full_name") if isinstance(court_info, dict) else str(court_info) if court_info else
+                    opinion.get("court_name") or
+                    "Unknown Court"
+                )
+                
+                # Get filing date with multiple field attempts
+                date_filed = (
+                    opinion.get("date_filed") or
+                    opinion.get("dateFiled") or 
+                    opinion.get("date_created") or
+                    None
+                )
+                
+                # Get the opinion text from multiple possible sources
+                opinion_text = ""
+                text_sources = [
+                    opinion.get("plain_text"),
+                    opinion.get("html"),
+                    opinion.get("text"),
+                    opinion.get("full_text")
+                ]
+                
+                for source in text_sources:
+                    if source and len(source.strip()) > 100:  # Ensure we get substantial content
+                        opinion_text = source
+                        break
+                
+                # If no substantial text found, try getting opinions from cluster
+                if not opinion_text and opinion.get("sub_opinions"):
+                    for sub_opinion in opinion.get("sub_opinions", []):
+                        sub_text = sub_opinion.get("plain_text") or sub_opinion.get("html", "")
+                        if sub_text and len(sub_text.strip()) > 100:
+                            opinion_text = sub_text
+                            break
+                
                 key_excerpt = opinion_text[:500] + "..." if len(opinion_text) > 500 else opinion_text
+                
+                # Add extracted info to debug
+                result["debug_info"].update({
+                    "extracted_case_name": case_name,
+                    "extracted_court": court_name,
+                    "extracted_date": date_filed,
+                    "opinion_text_length": len(opinion_text),
+                    "citations_found": len(citations),
+                    "has_sub_opinions": bool(opinion.get("sub_opinions"))
+                })
                 
                 # Determine tags based on content
                 tags = []

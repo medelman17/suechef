@@ -32,6 +32,62 @@ async def get_embedding(text: str, openai_client) -> List[float]:
     return response.data[0].embedding
 
 
+def format_relationship_content(relationship_type: str, relationship_obj) -> str:
+    """Convert raw relationship types into human-readable content."""
+    
+    # Try to get node names for context
+    source_name = "Entity"
+    target_name = "Entity"
+    
+    try:
+        # Try multiple ways to get node names for context
+        if hasattr(relationship_obj, 'source_node_name') and relationship_obj.source_node_name:
+            source_name = relationship_obj.source_node_name
+        elif hasattr(relationship_obj, 'source_node') and relationship_obj.source_node:
+            source_name = str(relationship_obj.source_node)
+        
+        if hasattr(relationship_obj, 'target_node_name') and relationship_obj.target_node_name:
+            target_name = relationship_obj.target_node_name
+        elif hasattr(relationship_obj, 'target_node') and relationship_obj.target_node:
+            target_name = str(relationship_obj.target_node)
+            
+        # Truncate very long names
+        if len(source_name) > 50:
+            source_name = source_name[:47] + "..."
+        if len(target_name) > 50:
+            target_name = target_name[:47] + "..."
+            
+    except Exception:
+        pass
+    
+    # Map common relationship types to readable descriptions
+    relationship_map = {
+        "RESPONDS_UNDER_LEGAL_FRAMEWORK": f"Legal response framework connects {source_name} and {target_name}",
+        "RESOLVED_WITH": f"Resolution mechanism: {source_name} resolved with {target_name}",
+        "SMELLED_IN": f"Detection context: {source_name} detected in {target_name}",
+        "LOCATED_IN": f"Location relationship: {source_name} located in {target_name}",
+        "CAUSED_BY": f"Causal relationship: {source_name} caused by {target_name}",
+        "INVOLVES": f"Involvement: {source_name} involves {target_name}",
+        "APPLIES_TO": f"Application: {source_name} applies to {target_name}",
+        "CITES": f"Citation: {source_name} cites {target_name}",
+        "PRECEDENT_FOR": f"Precedent relationship: {source_name} is precedent for {target_name}",
+        "PARTY_TO": f"Party relationship: {source_name} is party to {target_name}",
+        "GOVERNS": f"Governance: {source_name} governs {target_name}",
+        "OCCURRED_ON": f"Temporal relationship: {source_name} occurred on {target_name}",
+        "VIOLATED": f"Violation: {source_name} violated {target_name}",
+        "RESULTED_IN": f"Result: {source_name} resulted in {target_name}",
+        "SUBJECT_TO": f"Subject relationship: {source_name} subject to {target_name}"
+    }
+    
+    # Return mapped description or fallback to formatted type
+    if relationship_type in relationship_map:
+        return relationship_map[relationship_type]
+    else:
+        # Convert camelCase/snake_case to readable format
+        readable_type = relationship_type.replace("_", " ").replace("-", " ").lower()
+        return f"{readable_type.title()} relationship between {source_name} and {target_name}"
+
+
 async def add_event(
     postgres_pool: asyncpg.Pool,
     qdrant_client,
@@ -265,17 +321,20 @@ async def unified_legal_search(
                     "type": "relationship"
                 }
                 
-                # Extract relationship information
-                if hasattr(r, 'name') and r.name:
-                    result_item["content"] = r.name
-                    result_item["relationship_type"] = r.name
-                elif hasattr(r, 'fact') and r.fact:
+                # Extract relationship information with meaningful content
+                if hasattr(r, 'fact') and r.fact:
+                    # Prefer fact content as it's more descriptive
                     result_item["content"] = r.fact
-                    result_item["relationship_type"] = "fact"
+                    result_item["relationship_type"] = getattr(r, 'name', "fact")
+                elif hasattr(r, 'name') and r.name:
+                    # Convert relationship type to readable content
+                    result_item["relationship_type"] = r.name
+                    result_item["content"] = format_relationship_content(r.name, r)
                 else:
-                    result_item["content"] = f"EntityEdge {str(r.uuid)[:8]}"
+                    result_item["content"] = f"Knowledge graph relationship {str(r.uuid)[:8]}"
+                    result_item["relationship_type"] = "unknown"
                 
-                # Add additional relationship context
+                # Add additional relationship context and metadata
                 if hasattr(r, 'source_node_uuid') and hasattr(r, 'target_node_uuid'):
                     result_item["source_node"] = str(r.source_node_uuid)
                     result_item["target_node"] = str(r.target_node_uuid)
@@ -285,6 +344,14 @@ async def unified_legal_search(
                 
                 if hasattr(r, 'created_at'):
                     result_item["created_at"] = str(r.created_at)
+                
+                # Add any additional attributes for debugging
+                if hasattr(r, 'attributes') and r.attributes:
+                    result_item["attributes"] = r.attributes
+                
+                # Include episode context if available
+                if hasattr(r, 'episode_uuid'):
+                    result_item["episode_context"] = str(r.episode_uuid)
                 
                 graph_results.append(result_item)
             

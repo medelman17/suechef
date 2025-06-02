@@ -186,6 +186,11 @@ class EventService(BaseService):
             """
             
             async with self.db.postgres.acquire() as conn:
+                # Get total count first
+                count_query = f"SELECT COUNT(*) FROM events {where_clause}"
+                total_count = await conn.fetchval(count_query, *(params[:-2]))  # Exclude limit/offset params
+                
+                # Get events
                 events = await conn.fetch(query, *params)
             
             # Convert to list of dicts
@@ -200,7 +205,7 @@ class EventService(BaseService):
             return self._success_response(
                 data={
                     "events": events_list,
-                    "total": len(events_list),
+                    "total": total_count,
                     "limit": limit,
                     "offset": offset
                 }
