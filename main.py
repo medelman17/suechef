@@ -687,7 +687,7 @@ async def updateLegalEvent(
     normalized_tags = parse_string_list(tags) if tags is not None else None
     
     # Get OpenAI API key from config
-    openai_api_key = config.openai.api_key if config and config.openai else ""
+    openai_api_key = config.api.openai_api_key if config and config.api else ""
     
     return await event_service.update_event(
         event_id=event_id,
